@@ -826,37 +826,12 @@ sequenceDiagram
 
 ## 10. 핵심 정리
 
-```mermaid
-flowchart TB
-    ROOT((DOM to Context))
+**DOM to Context 핵심 구조**
 
-    ROOT --> DF[Dirty Flag]
-    ROOT --> DS[데이터 스냅샷]
-    ROOT --> WW[Web Worker]
-    ROOT --> SRC[데이터 소스]
-
-    DF --> DF1[dirty - DOM 변경 감지]
-    DF --> DF2[snapshotReady - Worker 완료]
-    DF --> DF3[질의 시점에 스캔]
-
-    DS --> DS1[queryCache 저장]
-    DS --> DS2[화면 변경 대응]
-    DS --> DS3[일관성 보장]
-
-    WW --> WW1[Main - Scanner]
-    WW --> WW2[Worker - Parser]
-    WW --> WW3[병렬 처리]
-
-    SRC --> SRC1[DOM - 화면 데이터]
-    SRC --> SRC2[Store - 앱 상태]
-    SRC --> SRC3[스키마 필터링]
-
-    style ROOT fill:#6B7280,stroke:#374151,color:#fff
-    style DF fill:#F59E0B,stroke:#D97706,color:#fff
-    style DS fill:#EC4899,stroke:#DB2777,color:#fff
-    style WW fill:#06B6D4,stroke:#0891B2,color:#fff
-    style SRC fill:#F97316,stroke:#EA580C,color:#fff
-```
+- **Dirty Flag**: dirty (DOM 변경 감지), snapshotReady (Worker 완료), 질의 시점에 스캔
+- **데이터 스냅샷**: queryCache 저장, 화면 변경 대응, 일관성 보장
+- **Web Worker**: Main (Scanner), Worker (Parser), 병렬 처리
+- **데이터 소스**: DOM (화면 데이터), Store (앱 상태), 스키마 필터링
 
 | 설계 결정 | 설명 |
 |-----------|------|
