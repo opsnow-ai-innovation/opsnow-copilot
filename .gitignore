@@ -1,1 +1,48 @@
+# Documentation (local only)
 docs/
+
+# Project files (local only)
+CLAUDE.md
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Logs
+*.log
+logs/
+
+# Temp
+temp/
+tmp/
+cache/
+
+# Build
+dist/
+build/
+*.egg-info/

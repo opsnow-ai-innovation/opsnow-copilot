@@ -1,0 +1,38 @@
+# Web Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+
+# AI / LLM
+dspy-ai==2.5.43
+openai==1.58.1
+anthropic==0.40.0
+
+# Vector Store (In-Memory)
+sentence-transformers==3.3.1
+numpy==2.2.0
+
+# Async / Concurrency
+asyncio-throttle==1.0.2
+
+# Configuration
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# Logging
+structlog==24.4.0
+
+# Redis (Optional - Session)
+redis==5.2.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+httpx==0.28.1
+
+# Development
+black==24.10.0
+isort==5.13.2
+mypy==1.13.0
