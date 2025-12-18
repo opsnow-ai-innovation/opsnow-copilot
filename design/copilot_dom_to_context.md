@@ -8,19 +8,22 @@
 
 이 문서는 **클라이언트(브라우저)에서 DOM을 LLM이 이해할 수 있는 컨텍스트로 변환**하는 과정만 다룹니다.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     이 문서의 범위                               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   [DOM]  ──────────────────────────────────►  [Context]         │
-│                                                                 │
-│   • HTML 구조                                  • 메타 정보       │
-│   • 테이블/차트 데이터                          • 실제 데이터     │
-│   • 필터 상태                                  • 페이지 정보     │
-│   • 사용자 인터랙션                                              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph DOM["DOM (입력)"]
+        D1["HTML 구조"]
+        D2["테이블/차트 데이터"]
+        D3["필터 상태"]
+        D4["사용자 인터랙션"]
+    end
+
+    subgraph Context["Context (출력)"]
+        C1["메타 정보"]
+        C2["실제 데이터"]
+        C3["페이지 정보"]
+    end
+
+    DOM ==>|"이 문서의 범위"| Context
 ```
 
 **범위 외**: 서버 측 처리, LLM 프롬프트, RAG, 응답 생성
@@ -31,28 +34,15 @@
 
 사용자가 질의할 때마다 **항상** 다음 정보를 함께 전송합니다:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    질의 시 전송 데이터                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   1. 사용자 질의 (query)                                        │
-│      └─ "이번 달 비용이 왜 높아졌어?"                            │
-│                                                                 │
-│   2. 페이지 정보 (page)                                         │
-│      ├─ url: "/cost/analysis"                                   │
-│      └─ title: "비용 분석"                                      │
-│                                                                 │
-│   3. 메타 정보 목록 (availableMetadata)                         │
-│      ├─ { id: "cost_summary", type: "summary", ... }            │
-│      ├─ { id: "cost_table", type: "table", ... }                │
-│      └─ { id: "cost_chart", type: "chart", ... }                │
-│                                                                 │
-│   ※ 대화 히스토리는 서버에서 Memory as RAG로 관리               │
-│   ※ 메뉴 구조는 서버에서 Platform API로 관리                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+| # | 항목 | 예시 |
+|---|------|------|
+| 1 | **사용자 질의** (query) | `"이번 달 비용이 왜 높아졌어?"` |
+| 2 | **페이지 정보** (page) | `{ url: "/cost/analysis", title: "비용 분석" }` |
+| 3 | **메타 정보 목록** (availableMetadata) | `[{ id: "cost_summary", type: "summary" }, ...]` |
+
+> **Note**
+> - 대화 히스토리는 서버에서 Memory as RAG로 관리
+> - 메뉴 구조는 서버에서 Platform API로 관리
 
 ### 2.1 전송 전략 (Dirty Flag 기반)
 
@@ -108,93 +98,80 @@ Copilot: "11월 총 비용은 $45,678이며..."
 
 Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필수**입니다.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Web Worker가 필수인 이유                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   문제: LLM 응답 대기 중 (10-30초) 사용자가 화면을 변경하면?    │
-│   ────────────────────────────────────────────────────────────  │
-│   • 질의 시점 메타 정보와 현재 DOM 데이터 불일치                │
-│   • LLM이 잘못된 데이터로 응답 생성                             │
-│                                                                 │
-│   해결: 질의 시점에 데이터 스냅샷 (Web Worker에서 병렬 처리)    │
-│   ────────────────────────────────────────────────────────────  │
-│                                                                 │
-│   [질의 시점]                                                   │
-│       │                                                         │
-│       ├─────────────────────┬─────────────────────┐             │
-│       ▼                     │                     ▼             │
-│   Main Thread               │               Web Worker          │
-│   ─────────────             │               ───────────         │
-│   Scanner 실행              │               Parser 실행         │
-│   메타 정보 추출            │               전체 데이터 추출    │
-│   서버로 즉시 전송          │               queryCache 저장     │
-│   (10-30ms)                 │               (50-200ms, 병렬)    │
-│                             │                                   │
-│                                                                 │
-│   장점:                                                         │
-│   • 데이터 일관성 보장: 질의 시점 스냅샷                        │
-│   • UI 블로킹 없음: 메타 전송 후 바로 화면 조작 가능            │
-│   • 병렬 처리: 메타 전송과 데이터 추출 동시 진행                │
-│                                                                 │
-│   제약:                                                         │
-│   • DOM 직접 접근 불가 → Main에서 DOM 읽어서 Worker로 전달      │
-│   • postMessage 통신 오버헤드 (수 ms)                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+> **문제**: LLM 응답 대기 중 (10-30초) 사용자가 화면을 변경하면?
+> - 질의 시점 메타 정보와 현재 DOM 데이터 불일치
+> - LLM이 잘못된 데이터로 응답 생성
+
+```mermaid
+flowchart TB
+    QUERY["질의 시점"] --> MAIN & WORKER
+
+    subgraph MAIN["Main Thread"]
+        M1["Scanner 실행"]
+        M2["메타 정보 추출"]
+        M3["서버로 즉시 전송"]
+        M4["(10-30ms)"]
+    end
+
+    subgraph WORKER["Web Worker"]
+        W1["Parser 실행"]
+        W2["전체 데이터 추출"]
+        W3["queryCache 저장"]
+        W4["(50-200ms, 병렬)"]
+    end
+
+    style MAIN fill:#4F46E5,color:#fff
+    style WORKER fill:#10B981,color:#fff
 ```
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     역할 분담                                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Main Thread                       Worker Thread               │
-│   ────────────────                  ────────────────            │
-│   • UI 렌더링                        • 데이터 파싱/정제          │
-│   • 사용자 인터랙션                   • Markdown 변환            │
-│   • DOM 접근 (Scanner)               • 토큰 추정                │
-│   • 이벤트 처리                       • queryCache 관리          │
-│   • WebSocket 통신                                              │
-│                                                                 │
-│   Main → Worker 전달:                                           │
-│   • DOM에서 읽은 원시 데이터 (테이블 행, 차트 옵션 등)          │
-│   • 메타 정보 (어떤 데이터를 파싱할지)                          │
-│                                                                 │
-│   Worker → Main 전달:                                           │
-│   • 파싱 완료된 구조화 데이터                                   │
-│   • queryCache 저장 완료 신호                                   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**장점**:
+- ✅ 데이터 일관성 보장: 질의 시점 스냅샷
+- ✅ UI 블로킹 없음: 메타 전송 후 바로 화면 조작 가능
+- ✅ 병렬 처리: 메타 전송과 데이터 추출 동시 진행
+
+**제약**:
+- ⚠️ DOM 직접 접근 불가 → Main에서 DOM 읽어서 Worker로 전달
+- ⚠️ postMessage 통신 오버헤드 (수 ms)
+
+#### 역할 분담
+
+| Main Thread | Worker Thread |
+|-------------|---------------|
+| UI 렌더링 | 데이터 파싱/정제 |
+| 사용자 인터랙션 | Markdown 변환 |
+| DOM 접근 (Scanner) | 토큰 추정 |
+| 이벤트 처리 | queryCache 관리 |
+| WebSocket 통신 | |
+
+| 방향 | 전달 내용 |
+|------|----------|
+| **Main → Worker** | DOM에서 읽은 원시 데이터, 메타 정보 |
+| **Worker → Main** | 파싱 완료된 구조화 데이터, 저장 완료 신호 |
 
 ### 3.3 기술 선택 기준
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      기술 선택 의사결정                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   DOM 순회 방식 선택:                                           │
-│   ─────────────────                                             │
-│   • 단순 탐색: querySelectorAll                                 │
-│   • 깊은 순회: TreeWalker (더 효율적)                           │
-│   • 조건부 탐색: document.evaluate (XPath)                      │
-│                                                                 │
-│   변경 감지 방식 선택:                                          │
-│   ─────────────────────                                         │
-│   • DOM 구조 변경: MutationObserver                             │
-│   • URL 변경: popstate + Router 이벤트                          │
-│   • 요소 가시성: IntersectionObserver                           │
-│                                                                 │
-│   처리 위치 선택:                                               │
-│   ───────────────                                               │
-│   • 경량 작업 (< 100 요소): Main Thread                         │
-│   • 중량 작업 (100+ 요소): Web Worker                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+#### DOM 순회 방식
+
+| 방식 | 기술 | 사용 케이스 |
+|------|------|-------------|
+| 단순 탐색 | `querySelectorAll` | 특정 셀렉터 매칭 |
+| 깊은 순회 | `TreeWalker` | 전체 DOM 순회 (더 효율적) |
+| 조건부 탐색 | `document.evaluate` | XPath 기반 복잡한 조건 |
+
+#### 변경 감지 방식
+
+| 감지 대상 | 기술 |
+|-----------|------|
+| DOM 구조 변경 | `MutationObserver` |
+| URL 변경 | `popstate` + Router 이벤트 |
+| 요소 가시성 | `IntersectionObserver` |
+
+#### 처리 위치
+
+| 작업량 | 처리 위치 |
+|--------|-----------|
+| 경량 (< 100 요소) | Main Thread |
+| 중량 (100+ 요소) | Web Worker |
 
 ---
 
@@ -202,306 +179,218 @@ Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필
 
 ### 4.1 Dirty Flag 기반 처리 (핵심)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   Dirty Flag 기반 처리 흐름                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   [DOM 변경 발생]                                               │
-│         │                                                       │
-│         ▼                                                       │
-│   MutationObserver / Router 감지                                │
-│         │                                                       │
-│         ▼                                                       │
-│   debounce 300ms                                                │
-│         │                                                       │
-│         ▼                                                       │
-│   dirty = true  (플래그만 설정, 스캔하지 않음)                  │
-│                                                                 │
-│                                                                 │
-│   [사용자 질의 시점]                                            │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌─────────────┐                                               │
-│   │ dirty 체크  │                                               │
-│   └──────┬──────┘                                               │
-│          │                                                      │
-│    ┌─────┴─────┐                                                │
-│    │           │                                                │
-│    ▼           ▼                                                │
-│   true        false                                             │
-│    │           │                                                │
-│    │           └──► 캐시된 메타+데이터 사용                     │
-│    │                                                            │
-│    ▼                                                            │
-│   dirty = false, snapshotReady = false                          │
-│    │                                                            │
-│    ▼                                                            │
-│   ┌────────────────────────────────────────┐                    │
-│   │ Main Thread      │ Web Worker          │                    │
-│   │ ──────────────── │ ────────────────    │                    │
-│   │ Scanner 실행     │ Parser 실행         │                    │
-│   │ 메타 정보 추출   │ 전체 데이터 스냅샷  │                    │
-│   │ 서버로 전송      │ 캐시에 저장         │                    │
-│   │                  │ snapshotReady=true  │                    │
-│   │ (병렬 실행)      │ (완료 후)           │                    │
-│   └────────────────────────────────────────┘                    │
-│                                                                 │
-│                                                                 │
-│   [request_data 수신 시]                                        │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌─────────────────────┐                                       │
-│   │ snapshotReady 체크  │                                       │
-│   └──────────┬──────────┘                                       │
-│              │                                                  │
-│    ┌─────────┴─────────┐                                        │
-│    │                   │                                        │
-│    ▼                   ▼                                        │
-│   true                false                                     │
-│    │                   │                                        │
-│    │                   └──► Worker 완료 대기 (await)            │
-│    │                                 │                          │
-│    └────────────────►────────────────┘                          │
-│                      │                                          │
-│                      ▼                                          │
-│               queryCache에서 반환                               │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph DOM_CHANGE["DOM 변경 발생"]
+        MO["MutationObserver"]
+        ROUTER["Router 이벤트"]
+    end
 
-   왜 이 방식인가?
-   ─────────────
-   • 단순함: 복잡한 사전 스캔/타이머 로직 불필요
-   • 효율성: 질의 없으면 스캔도 없음 (불필요한 작업 제거)
-   • 일관성: 질의 시점 데이터 스냅샷으로 응답 중 화면 변경 대응
+    subgraph FLAG["플래그 설정"]
+        DEBOUNCE["debounce 300ms"]
+        DIRTY["dirty = true"]
+    end
 
-   왜 두 개의 플래그인가?
-   ───────────────────
-   • dirty: DOM 변경 여부 (Scanner 시작 조건)
-   • snapshotReady: Worker 완료 여부 (데이터 요청 가능 조건)
-   • 병렬 실행이므로 Scanner 완료 ≠ Parser 완료
+    subgraph QUERY["사용자 질의"]
+        CHECK{"dirty?"}
+        CACHE["캐시 사용"]
+        FLAGS["dirty = false<br/>snapshotReady = false"]
+    end
+
+    subgraph PARALLEL["병렬 처리"]
+        MAIN["Main Thread<br/>━━━━━━━━━━━<br/>Scanner 실행<br/>메타 정보 전송<br/>(10-30ms)"]
+        WORKER["Web Worker<br/>━━━━━━━━━━━<br/>Parser 실행<br/>queryCache 저장<br/>snapshotReady=true"]
+    end
+
+    subgraph REQUEST["request_data 수신"]
+        CHECK2{"snapshotReady?"}
+        WAIT["Worker 완료 대기"]
+        RETURN["queryCache에서 반환"]
+    end
+
+    MO --> DEBOUNCE
+    ROUTER --> DEBOUNCE
+    DEBOUNCE --> DIRTY
+
+    DIRTY -.->|"질의 시"| CHECK
+    CHECK -->|false| CACHE
+    CHECK -->|true| FLAGS
+    FLAGS --> MAIN
+    FLAGS --> WORKER
+
+    WORKER -.->|"서버 요청 시"| CHECK2
+    CHECK2 -->|true| RETURN
+    CHECK2 -->|false| WAIT
+    WAIT --> RETURN
+
+    style DIRTY fill:#F59E0B,color:#fff
+    style FLAGS fill:#EF4444,color:#fff
+    style MAIN fill:#4F46E5,color:#fff
+    style WORKER fill:#10B981,color:#fff
+    style CACHE fill:#6B7280,color:#fff
+    style RETURN fill:#10B981,color:#fff
 ```
+
+**왜 이 방식인가?**
+- **단순함**: 복잡한 사전 스캔/타이머 로직 불필요
+- **효율성**: 질의 없으면 스캔도 없음 (불필요한 작업 제거)
+- **일관성**: 질의 시점 데이터 스냅샷으로 응답 중 화면 변경 대응
+
+**왜 두 개의 플래그인가?**
+- `dirty`: DOM 변경 여부 (Scanner 시작 조건)
+- `snapshotReady`: Worker 완료 여부 (데이터 요청 가능 조건)
+- 병렬 실행이므로 Scanner 완료 ≠ Parser 완료
 
 ### 4.2 데이터 일관성 보장 (스냅샷)
 
+**문제 상황**: LLM 응답 대기 중 (10-30초) 사용자가 화면을 변경하면?
+
+```mermaid
+sequenceDiagram
+    participant User as 사용자
+    participant Main as Main Thread
+    participant Worker as Web Worker
+    participant Cache as queryCache
+    participant Server as Server
+
+    User->>Main: 질의: "11월 비용 분석해줘"
+    Note over Main: dirty=false, snapshotReady=false
+
+    rect rgb(240, 245, 255)
+        Note over Main,Worker: 병렬 처리
+        Main->>Main: Scanner 실행
+        Main->>Server: 메타 정보 전송
+        Main->>Worker: DOM 데이터 전달
+        Worker->>Worker: Parser 실행
+        Worker->>Cache: 스냅샷 저장
+        Note over Worker: snapshotReady = true
+    end
+
+    Note over User: 필터를 12월로 변경
+    Note over Main: dirty = true
+    Note over Cache: queryCache 유지 (11월 데이터)
+
+    Server->>Main: request_data
+    alt snapshotReady = false
+        Main->>Worker: 완료 대기
+    end
+    Main->>Cache: 캐시에서 조회
+    Cache->>Main: 11월 데이터 (스냅샷)
+    Main->>Server: 일관된 데이터 전송
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   왜 스냅샷이 필요한가?                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   문제 상황:                                                    │
-│   ──────────                                                    │
-│   [질의: "11월 비용 분석해줘"]                                  │
-│         │                                                       │
-│         │    LLM 처리 중 (10-30초)                              │
-│         │                                                       │
-│         │    [사용자: 필터를 12월로 변경]                       │
-│         │              ↓                                        │
-│         │         DOM 변경됨                                    │
-│         │                                                       │
-│         │    [LLM: request_data("cost_table")]                  │
-│         │              ↓                                        │
-│         │    스냅샷 없으면 → 12월 데이터 반환 (불일치!)         │
-│         │    스냅샷 있으면 → 11월 데이터 반환 (일관성 보장)     │
-│         │                                                       │
-│         ▼                                                       │
-│   [응답: 11월 비용 분석 결과]                                   │
-│                                                                 │
-│                                                                 │
-│   해결: 질의 시점 데이터 스냅샷                                 │
-│   ─────────────────────────────                                 │
-│                                                                 │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │                    질의 시점                             │   │
-│   │                        │                                 │   │
-│   │         ┌──────────────┼──────────────┐                  │   │
-│   │         ▼              │              ▼                  │   │
-│   │   Main Thread          │        Web Worker               │   │
-│   │   ─────────────        │        ───────────              │   │
-│   │   Scanner 실행         │        Parser 실행              │   │
-│   │   메타 정보 추출       │        모든 데이터 추출         │   │
-│   │   서버로 즉시 전송     │        queryCache에 저장        │   │
-│   │                        │              │                  │   │
-│   │                        │              ▼                  │   │
-│   │                        │        스냅샷 완료              │   │
-│   └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│   이후 화면 변경:                                               │
-│   • dirty = true (다음 질의용)                                  │
-│   • 현재 queryCache는 유지 (진행중인 질의에 영향 없음)          │
-│                                                                 │
-│   request_data 수신 시:                                         │
-│   • queryCache에서 반환 (현재 DOM 무시)                         │
-│   • 일관된 데이터 보장                                          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+**해결 방식**:
+- **이후 화면 변경**: `dirty = true` (다음 질의용), 현재 queryCache는 유지
+- **request_data 수신 시**: queryCache에서 반환 (현재 DOM 무시) → 일관된 데이터 보장
 
 ### 4.3 전체 파이프라인
 
+```mermaid
+flowchart LR
+    DOM["DOM"] --> Scanner --> Parser --> Builder
+
+    Scanner -->|저장| MC["Metadata<br/>Cache"]
+    Parser -->|저장| RC["Raw Data<br/>Cache"]
+    Builder -->|생성| CP["Context<br/>Payload"]
+
+    style DOM fill:#E5E7EB
+    style Scanner fill:#4F46E5,color:#fff
+    style Parser fill:#10B981,color:#fff
+    style Builder fill:#F59E0B,color:#fff
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   DOM to Context 파이프라인                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐  │
-│   │  DOM    │────►│ Scanner │────►│ Parser  │────►│ Builder │  │
-│   │         │     │         │     │         │     │         │  │
-│   └─────────┘     └─────────┘     └─────────┘     └─────────┘  │
-│                        │               │               │        │
-│                        ▼               ▼               ▼        │
-│                   Metadata        Raw Data        Context       │
-│                   Cache           Cache           Payload       │
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   1. Scanner: DOM 스캔 → 메타 정보 추출 (질의 시 dirty면 실행)  │
-│      • 어떤 데이터가 있는지 파악                                │
-│      • 실제 데이터는 추출하지 않음                              │
-│      • 결과: Metadata Cache                                     │
-│                                                                 │
-│   2. Parser: 요청된 메타 ID → 실제 데이터 추출                  │
-│      • LLM이 요청한 메타 정보만 처리                            │
-│      • 테이블, 차트, 요약 카드 등 파싱                          │
-│      • 결과: Raw Data                                           │
-│                                                                 │
-│   3. Builder: 데이터 → LLM 컨텍스트 조립                        │
-│      • Markdown 변환                                            │
-│      • 토큰 제한 적용                                           │
-│      • 결과: Context Payload                                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+| 단계 | 역할 | 트리거 | 결과 |
+|------|------|--------|------|
+| **Scanner** | DOM 스캔 → 메타 정보 추출 | 질의 시 dirty면 실행 | Metadata Cache |
+| **Parser** | 요청된 메타 ID → 실제 데이터 추출 | LLM이 요청한 메타 정보만 처리 | Raw Data |
+| **Builder** | 데이터 → LLM 컨텍스트 조립 | Markdown 변환, 토큰 제한 적용 | Context Payload |
 
 ### 4.4 단계별 상세
 
 #### Stage 1: Scanner (질의 시 dirty면 실행)
 
+> **트리거**: 사용자 질의 시점에 `dirty === true`인 경우
+
+**1. 컨테이너 영역 식별** (자동 감지)
+- 시맨틱 태그: `main`, `section`, `article`
+- 클래스 패턴: `.content`, `.page-*`, `.view-*`
+- 구조 패턴: 헤더 + 본문 영역
+
+**2. 데이터 영역 분류** (자동 감지)
+
+| 유형 | 식별 방법 |
+|------|-----------|
+| `summary` | 카드 형태, 큰 숫자, 증감 표시 |
+| `table` | `<table>`, `.ag-root-wrapper` (AG-Grid) |
+| `chart` | `.amcharts-main-div` (amCharts5) |
+| `filter` | `<select>`, DatePicker, 필터 컨테이너 |
+| `metric` | 단일 수치 표시 영역 |
+
+**3. 메타 정보 생성**
+
+```typescript
+{
+  id: "cost_by_service",
+  type: "table",
+  sources: ["dom", "store"],
+  label: "서비스별 비용",
+  description: "AWS 서비스별 비용 내역 테이블",
+  storePath: "cost/serviceList",
+  estimatedTokens: 800,
+  schema: {
+    fields: [
+      { name: "serviceName", type: "string", label: "서비스" },
+      { name: "cost", type: "number", unit: "USD" },
+      { name: "change", type: "number", unit: "%" }
+    ],
+    rowCount: 25
+  }
+}
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Stage 1: Scanner                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   트리거:                                                       │
-│   • 사용자 질의 시점에 dirty === true인 경우                    │
-│                                                                 │
-│   처리:                                                         │
-│   ──────                                                        │
-│   1. 컨테이너 영역 식별 (자동 감지)                             │
-│      • 시맨틱 태그 (main, section, article)                     │
-│      • 클래스 패턴 (.content, .page-, .view-)                   │
-│      • 구조 패턴 (헤더 + 본문 영역)                             │
-│                                                                 │
-│   2. 데이터 영역 분류 (자동 감지)                               │
-│      ┌──────────────┬─────────────────────────────────────┐     │
-│      │ 유형         │ 식별 방법                           │     │
-│      ├──────────────┼─────────────────────────────────────┤     │
-│      │ summary      │ 카드 형태, 큰 숫자, 증감 표시       │     │
-│      │ table        │ <table>, .ag-root-wrapper (AG-Grid) │     │
-│      │ chart        │ .amcharts-main-div (amCharts5)      │     │
-│      │ filter       │ <select>, DatePicker, 필터 컨테이너 │     │
-│      │ metric       │ 단일 수치 표시 영역                 │     │
-│      └──────────────┴─────────────────────────────────────┘     │
-│                                                                 │
-│   3. 메타 정보 생성                                             │
-│      {                                                          │
-│        id: "cost_by_service",                                   │
-│        type: "table",                                           │
-│        sources: ["dom", "store"],                               │
-│        label: "서비스별 비용",                                  │
-│        description: "AWS 서비스별 비용 내역 테이블",            │
-│        storePath: "cost/serviceList",                           │
-│        estimatedTokens: 800,                                    │
-│        schema: {                                                │
-│          fields: [                                              │
-│            { name: "serviceName", type: "string", label: "서비스" },
-│            { name: "cost", type: "number", unit: "USD" },       │
-│            { name: "change", type: "number", unit: "%" }        │
-│          ],                                                     │
-│          rowCount: 25                                           │
-│        }                                                        │
-│      }                                                          │
-│                                                                 │
-│   출력: MetadataRegistry (항상 준비 상태)                       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+> **출력**: MetadataRegistry (항상 준비 상태)
 
 #### Stage 2: Parser (LLM 데이터 요청 시)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Stage 2: Parser                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   트리거:                                                       │
-│   • 서버로부터 데이터 요청 수신                                 │
-│   • { type: "request_data", metadataIds: ["cost_summary", ...] }│
-│                                                                 │
-│   처리 (유형별):                                                │
-│   ────────────────                                              │
-│                                                                 │
-│   [Summary 파싱]                                                │
-│   • 제목, 주요 수치, 증감률 추출                                │
-│   • 결과: { title, value, change, period }                      │
-│                                                                 │
-│   [Table 파싱]                                                  │
-│   • 헤더, 행 데이터 추출                                        │
-│   • AG-Grid: gridApi.getRenderedNodes()                         │
-│   • HTML table: <tr>, <td> 순회                                 │
-│   • 결과: { headers: [], rows: [[]] }                           │
-│                                                                 │
-│   [Chart 파싱]                                                  │
-│   • amCharts5: root.container 데이터 접근                       │
-│   • 차트 인스턴스에서 series.data 추출                          │
-│   • Canvas: 데이터 추출 불가 → 메타 정보만                      │
-│   • 결과: { type, labels: [], datasets: [] }                    │
-│                                                                 │
-│   [Filter 파싱]                                                 │
-│   • 현재 선택값 추출                                            │
-│   • 기간, 벤더, 계정 등                                         │
-│   • 결과: { period: "2024-11", vendor: "aws", ... }             │
-│                                                                 │
-│   출력: Raw Data Cache                                          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> **트리거**: 서버로부터 `{ type: "request_data", metadataIds: [...] }` 수신
+
+| 유형 | 처리 방법 | 결과 |
+|------|-----------|------|
+| **Summary** | 제목, 주요 수치, 증감률 추출 | `{ title, value, change, period }` |
+| **Table** | AG-Grid: `gridApi.getRenderedNodes()`, HTML: `<tr>`, `<td>` 순회 | `{ headers: [], rows: [[]] }` |
+| **Chart** | amCharts5: `series.data` 추출, Canvas: 메타 정보만 | `{ type, labels: [], datasets: [] }` |
+| **Filter** | 현재 선택값 (기간, 벤더, 계정 등) 추출 | `{ period: "2024-11", vendor: "aws" }` |
+
+> **출력**: Raw Data Cache
 
 #### Stage 3: Builder (컨텍스트 조립)
 
+**1. Markdown 변환**
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Stage 3: Builder                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   처리:                                                         │
-│   ──────                                                        │
-│                                                                 │
-│   1. Markdown 변환                                              │
-│      ┌─────────────────────────────────────────────────────┐    │
-│      │ Table → Markdown Table                              │    │
-│      │ | 서비스 | 비용 | 증감 |                            │    │
-│      │ |--------|------|------|                            │    │
-│      │ | EC2    | $12K | +5%  |                            │    │
-│      └─────────────────────────────────────────────────────┘    │
-│                                                                 │
-│   2. 토큰 제한 적용                                             │
-│      • 최대 토큰 한도 체크                                      │
-│      • 초과 시 행 수 축소 또는 요약                             │
-│                                                                 │
-│   3. 최종 조립                                                  │
-│      {                                                          │
-│        data: {                                                  │
-│          cost_summary: "## 비용 요약\n총 비용: $45,678...",     │
-│          cost_table: "| 서비스 | 비용 |...",                    │
-│        },                                                       │
-│        totalTokens: 1250                                        │
-│      }                                                          │
-│                                                                 │
-│   출력: Context Payload (서버로 전송)                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+## 서비스별 비용
+- EC2: $12K (+5%)
+- S3: $3K (-2%)
+- RDS: $8K (+12%)
 ```
+
+**2. 토큰 제한 적용**
+- 최대 토큰 한도 체크
+- 초과 시 행 수 축소 또는 요약
+
+**3. 최종 조립**
+
+```json
+{
+  "data": {
+    "cost_summary": "## 비용 요약\n총 비용: $45,678...",
+    "cost_table": "| 서비스 | 비용 |..."
+  },
+  "totalTokens": 1250
+}
+```
+
+> **출력**: Context Payload (서버로 전송)
 
 ---
 
@@ -509,161 +398,85 @@ Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필
 
 ### 5.1 자동 감지 기반 추출 (사용자 수정 불필요)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   메타 정보 자동 추출 전략                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   원칙: 기존 코드 수정 없이 자동 감지                           │
-│   ─────────────────────────────────────                         │
-│                                                                 │
-│   1. 컴포넌트 클래스 패턴                                       │
-│   ──────────────────────                                        │
-│   • AG-Grid: .ag-root-wrapper, .ag-theme-*                      │
-│   • amCharts5: .amcharts-main-div, [id*="chartdiv"]             │
-│   • 테이블: <table>, .data-table, .grid-table                   │
-│                                                                 │
-│   2. 구조/레이아웃 패턴                                         │
-│   ─────────────────────                                         │
-│   • 요약 카드: 큰 숫자 + 라벨 + 증감률 조합                     │
-│   • 필터 영역: <select>, input[type="date"], .filter-*          │
-│   • 메트릭: 단일 수치 + 단위 표시                               │
-│                                                                 │
-│   3. 시맨틱 태그                                                │
-│   ───────────────                                               │
-│   • <main>, <section>, <article>                                │
-│   • <table>, <thead>, <tbody>                                   │
-│   • <h1>-<h6> 제목 요소                                         │
-│                                                                 │
-│   4. 텍스트 패턴                                                │
-│   ─────────────                                                 │
-│   • 금액: $, ₩, USD, KRW + 숫자                                 │
-│   • 퍼센트: 숫자 + %                                            │
-│   • 날짜: YYYY-MM, MM월 등                                      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> **원칙**: 기존 코드 수정 없이 자동 감지
+
+| 감지 방식 | 패턴 |
+|-----------|------|
+| **컴포넌트 클래스** | AG-Grid: `.ag-root-wrapper`, `.ag-theme-*`<br/>amCharts5: `.amcharts-main-div`, `[id*="chartdiv"]`<br/>테이블: `<table>`, `.data-table` |
+| **구조/레이아웃** | 요약 카드: 큰 숫자 + 라벨 + 증감률<br/>필터 영역: `<select>`, `input[type="date"]`<br/>메트릭: 단일 수치 + 단위 |
+| **시맨틱 태그** | `<main>`, `<section>`, `<article>`<br/>`<table>`, `<thead>`, `<tbody>`<br/>`<h1>`-`<h6>` 제목 요소 |
+| **텍스트 패턴** | 금액: `$`, `₩`, `USD`, `KRW` + 숫자<br/>퍼센트: 숫자 + `%`<br/>날짜: `YYYY-MM`, `MM월` |
 
 ### 5.2 컴포넌트별 추출 방법
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    컴포넌트별 메타 정보 추출                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   AG-Grid 테이블                                                │
-│   ─────────────────                                             │
-│   감지: .ag-root-wrapper, .ag-theme-*                           │
-│   메타: 컬럼 정의, 행 수, 정렬/필터 상태                        │
-│   데이터: gridApi.getRenderedNodes() 또는 DOM 파싱              │
-│                                                                 │
-│   amCharts5 차트                                                │
-│   ──────────────                                                │
-│   감지: .amcharts-main-div, [id*="chartdiv"]                    │
-│   메타: 차트 타입, 시리즈 수, 데이터 포인트 수                  │
-│   데이터: am5.registry.rootElements → series.data               │
-│                                                                 │
-│   요약 카드                                                     │
-│   ─────────                                                     │
-│   감지: 카드 컨테이너 내 [주요 수치 + 라벨 + 증감] 패턴         │
-│   메타: 제목, 값 유형 (금액/퍼센트/개수)                        │
-│   데이터: 텍스트 노드에서 숫자/퍼센트 추출                      │
-│                                                                 │
-│   필터 영역                                                     │
-│   ─────────                                                     │
-│   감지: <select>, input[type="date"], .filter-* 컨테이너        │
-│   메타: 필터 종류, 현재 선택값                                  │
-│   데이터: 선택된 값, 날짜 범위 추출                             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+| 컴포넌트 | 감지 | 메타 | 데이터 |
+|----------|------|------|--------|
+| **AG-Grid 테이블** | `.ag-root-wrapper`, `.ag-theme-*` | 컬럼 정의, 행 수, 정렬/필터 상태 | `gridApi.getRenderedNodes()` 또는 DOM 파싱 |
+| **amCharts5 차트** | `.amcharts-main-div`, `[id*="chartdiv"]` | 차트 타입, 시리즈 수, 데이터 포인트 수 | `am5.registry.rootElements` → `series.data` |
+| **요약 카드** | 카드 컨테이너 내 [수치 + 라벨 + 증감] 패턴 | 제목, 값 유형 (금액/퍼센트/개수) | 텍스트 노드에서 숫자/퍼센트 추출 |
+| **필터 영역** | `<select>`, `input[type="date"]`, `.filter-*` | 필터 종류, 현재 선택값 | 선택된 값, 날짜 범위 추출 |
 
 ### 5.3 데이터 소스 (DOM vs Store)
 
+#### `sources: ["dom"]` - 화면 데이터
+
+| 특징 | 설명 |
+|------|------|
+| 대상 | 화면에 렌더링된 데이터 |
+| 특성 | 필터/정렬 적용된 결과, 사용자가 실제로 보는 것 |
+
+```typescript
+{ id: "cost_table", type: "table", sources: ["dom"] }
+{ id: "cost_chart", type: "chart", sources: ["dom"] }
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    데이터 소스 구분                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   sources: ["dom"] (화면 데이터)                                │
-│   ──────────────────────────────                                │
-│   • 화면에 렌더링된 데이터                                      │
-│   • 필터/정렬 적용된 결과                                       │
-│   • 사용자가 실제로 보는 것                                     │
-│                                                                 │
-│   예시:                                                         │
-│   { id: "cost_table", type: "table", sources: ["dom"] }         │
-│   { id: "cost_chart", type: "chart", sources: ["dom"] }         │
-│                                                                 │
-│                                                                 │
-│   sources: ["store"] (앱 상태)                                  │
-│   ────────────────────────────                                  │
-│   • 상태 관리 store에 저장된 원본 데이터                        │
-│   • API 응답 결과                                               │
-│   • 앱 컨텍스트 (선택된 벤더, 회사 등)                          │
-│   • 프레임워크별: Vuex, Pinia, Redux, MobX 등                   │
-│                                                                 │
-│   예시:                                                         │
-│   { id: "selected_vendor", type: "context", sources: ["store"], │
-│     storePath: "internalCommon/selectedVendor" }                │
-│   { id: "data_ingest", type: "context", sources: ["store"],     │
-│     storePath: "internalCommon/dataIngest" }                    │
-│   { id: "monthly_billed", type: "summary", sources: ["store"],  │
-│     storePath: "overview/monthlyBilled" }                       │
-│                                                                 │
-│                                                                 │
-│   sources: ["dom", "store"] (복수 소스)                         │
-│   ─────────────────────────────────────                         │
-│   • 여러 소스에서 데이터 제공 가능                              │
-│   • 원본 vs 필터링된 데이터 비교 분석 가능                      │
-│   • 향후 다른 소스 추가 가능 (예: "api", "cache" 등)            │
-│                                                                 │
-│   예시:                                                         │
-│   { id: "budget_list", type: "table", sources: ["dom", "store"],│
-│     storePath: "budget/budgetList" }                            │
-│                                                                 │
-│                                                                 │
-│   LLM 요청 시 소스 선택:                                        │
-│   ──────────────────────                                        │
-│   • "화면에 보이는 데이터 분석해줘" → preferredSources: ["dom"] │
-│   • "원본 데이터 보여줘"           → preferredSources: ["store"]│
-│   • "필터 전후 비교해줘"           → preferredSources: ["dom", "store"]
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+
+#### `sources: ["store"]` - 앱 상태
+
+| 특징 | 설명 |
+|------|------|
+| 대상 | 상태 관리 store에 저장된 원본 데이터 |
+| 특성 | API 응답 결과, 앱 컨텍스트 (벤더, 회사 등) |
+| 프레임워크 | Vuex, Pinia, Redux, MobX 등 |
+
+```typescript
+{ id: "selected_vendor", type: "context", sources: ["store"], storePath: "internalCommon/selectedVendor" }
+{ id: "data_ingest", type: "context", sources: ["store"], storePath: "internalCommon/dataIngest" }
 ```
+
+#### `sources: ["dom", "store"]` - 복수 소스
+
+- 여러 소스에서 데이터 제공 가능
+- 원본 vs 필터링된 데이터 비교 분석 가능
+- 향후 다른 소스 추가 가능 (예: `"api"`, `"cache"`)
+
+#### LLM 요청 시 소스 선택
+
+| 사용자 요청 | preferredSources |
+|-------------|------------------|
+| "화면에 보이는 데이터 분석해줘" | `["dom"]` |
+| "원본 데이터 보여줘" | `["store"]` |
+| "필터 전후 비교해줘" | `["dom", "store"]` |
 
 ### 5.4 앱 상태 (Store) 주요 데이터
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    앱 상태 (Store) 주요 데이터                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ※ 상태 관리 라이브러리별 접근 방식이 다름                     │
-│     - Vue: Vuex, Pinia                                          │
-│     - React: Redux, MobX, Zustand, Recoil                       │
-│     - 구현 시 해당 프레임워크에 맞게 어댑터 구현 필요           │
-│                                                                 │
-│   모듈/슬라이스         │ 데이터                │ 설명          │
-│   ──────────────────────│───────────────────────│───────────────│
-│   internalCommon        │ selectedVendor        │ 선택된 벤더   │
-│                         │ dataIngest            │ 수집 상태     │
-│                         │ statusAutoSavings     │ 절감 상태     │
-│   ──────────────────────│───────────────────────│───────────────│
-│   common                │ vendors               │ 벤더 목록     │
-│                         │ companyList           │ 회사 목록     │
-│                         │ homepageInfo          │ 홈 정보       │
-│   ──────────────────────│───────────────────────│───────────────│
-│   overview              │ monthlyBilled         │ 월별 청구     │
-│   ──────────────────────│───────────────────────│───────────────│
-│   budget                │ budgetList            │ 예산 목록     │
-│   ──────────────────────│───────────────────────│───────────────│
-│   cost                  │ (비용 분석 데이터)    │ 비용 관련     │
-│                                                                 │
-│   ※ storePath 형식: "{모듈명}/{상태명}" 또는 "{모듈명}/{getter명}"
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> **Note**: 상태 관리 라이브러리별 접근 방식이 다름
+> - Vue: Vuex, Pinia
+> - React: Redux, MobX, Zustand, Recoil
+> - 구현 시 해당 프레임워크에 맞게 어댑터 구현 필요
+
+| 모듈/슬라이스 | 데이터 | 설명 |
+|---------------|--------|------|
+| `internalCommon` | `selectedVendor` | 선택된 벤더 |
+| | `dataIngest` | 수집 상태 |
+| | `statusAutoSavings` | 절감 상태 |
+| `common` | `vendors` | 벤더 목록 |
+| | `companyList` | 회사 목록 |
+| | `homepageInfo` | 홈 정보 |
+| `overview` | `monthlyBilled` | 월별 청구 |
+| `budget` | `budgetList` | 예산 목록 |
+| `cost` | (비용 분석 데이터) | 비용 관련 |
+
+> **storePath 형식**: `{모듈명}/{상태명}` 또는 `{모듈명}/{getter명}`
 
 ---
 
@@ -671,152 +484,96 @@ Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필
 
 ### 6.1 핵심 원칙
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   Dirty Flag 방식의 핵심                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   원칙: 변경 감지만 하고, 스캔은 질의 시점에                    │
-│   ─────────────────────────────────────────────                 │
-│                                                                 │
-│   • DOM 변경 → dirty = true (이게 전부)                         │
-│   • 스캔/파싱은 하지 않음                                       │
-│   • 질의 시점에 dirty 체크 → dirty면 그때 스캔                  │
-│                                                                 │
-│   장점:                                                         │
-│   • 사용자가 화면을 계속 변경해도 부하 없음                     │
-│   • 질의 없으면 작업도 없음                                     │
-│   • 단순하고 예측 가능한 동작                                   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> **원칙**: 변경 감지만 하고, 스캔은 질의 시점에
+
+| 동작 | 설명 |
+|------|------|
+| DOM 변경 | `dirty = true` (이게 전부) |
+| 스캔/파싱 | 하지 않음 |
+| 질의 시점 | dirty 체크 → dirty면 그때 스캔 |
+
+**장점**:
+- ✅ 사용자가 화면을 계속 변경해도 부하 없음
+- ✅ 질의 없으면 작업도 없음
+- ✅ 단순하고 예측 가능한 동작
 
 ### 6.2 감지 이벤트
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      화면 변경 감지 전략                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   이벤트 소스             │ 기술                │ 처리          │
-│   ────────────────────────│─────────────────────│───────────────│
-│   페이지 이동             │ Router 이벤트       │ dirty = true  │
-│   (URL 변경)              │ popstate            │               │
-│   ────────────────────────│─────────────────────│───────────────│
-│   탭/필터 변경            │ MutationObserver    │ dirty = true  │
-│   (DOM 구조 변경)         │                     │               │
-│   ────────────────────────│─────────────────────│───────────────│
-│   데이터 갱신             │ 명시적 이벤트       │ dirty = true  │
-│   (API 응답)              │ copilot:data-loaded │               │
-│   ────────────────────────│─────────────────────│───────────────│
-│   모달/팝업               │ MutationObserver    │ dirty = true  │
-│                           │                     │               │
-│                                                                 │
-│   Debounce 적용:                                                │
-│   • 300ms 대기 후 dirty = true 설정                             │
-│   • 연속 변경 시 마지막 1회만 플래그 설정                       │
-│   • 스캔은 하지 않음 (질의 시점까지 대기)                       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+| 이벤트 소스 | 기술 | 처리 |
+|-------------|------|------|
+| 페이지 이동 (URL 변경) | Router 이벤트, `popstate` | `dirty = true` |
+| 탭/필터 변경 (DOM 구조 변경) | `MutationObserver` | `dirty = true` |
+| 데이터 갱신 (API 응답) | 명시적 이벤트 `copilot:data-loaded` | `dirty = true` |
+| 모달/팝업 | `MutationObserver` | `dirty = true` |
+
+**Debounce 적용**:
+- 300ms 대기 후 `dirty = true` 설정
+- 연속 변경 시 마지막 1회만 플래그 설정
+- 스캔은 하지 않음 (질의 시점까지 대기)
 
 ### 6.3 상태 관리
 
+#### 상태 구조
+
+```typescript
+{
+  dirty: boolean,           // DOM 변경 여부
+  snapshotReady: boolean,   // queryCache 준비 완료 여부
+  metadataCache: Metadata[],// 캐시된 메타 정보
+  queryCache: Map<id, data> // 질의 시점 데이터 스냅샷
+}
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Dirty Flag 상태 관리                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   상태:                                                         │
-│   {                                                             │
-│     dirty: boolean,           // DOM 변경 여부                  │
-│     snapshotReady: boolean,   // queryCache 준비 완료 여부      │
-│     metadataCache: Metadata[],// 캐시된 메타 정보               │
-│     queryCache: Map<id, data> // 질의 시점 데이터 스냅샷        │
-│   }                                                             │
-│                                                                 │
-│   초기화:                                                       │
-│   • 앱 시작 시 dirty = true, snapshotReady = false              │
-│                                                                 │
-│   DOM 변경 시:                                                  │
-│   • dirty = true                                                │
-│   • snapshotReady는 유지 (진행중인 질의 보호)                   │
-│   • 다음 질의에서 새로 스냅샷                                   │
-│                                                                 │
-│   질의 시:                                                      │
-│   • if (dirty) {                                                │
-│       snapshotReady = false   // 스냅샷 준비 중 표시            │
-│       dirty = false           // 즉시 false로 변경              │
-│                                                                 │
-│       Main: Scanner → metadataCache 갱신 → 서버 전송            │
-│       Worker: Parser → queryCache 스냅샷 (병렬)                 │
-│              → 완료 시 snapshotReady = true                     │
-│     }                                                           │
-│   • else → 캐시 사용                                            │
-│                                                                 │
-│   request_data 수신 시:                                         │
-│   • if (!snapshotReady) await Worker 완료 대기                  │
-│   • queryCache에서 반환 (현재 DOM 무시)                         │
-│   • 일관된 데이터 보장                                          │
-│                                                                 │
-│                                                                 │
-│   ※ 왜 두 개의 플래그가 필요한가?                               │
-│   ──────────────────────────────                                │
-│   문제: Scanner(Main)와 Parser(Worker)가 병렬 실행              │
-│   • Scanner 완료 시점 ≠ Parser 완료 시점                        │
-│   • dirty만 사용하면 Parser 완료 전에 새 질의가 올 수 있음      │
-│                                                                 │
-│   해결:                                                         │
-│   • dirty: DOM 변경 감지용 (Scanner 시작 조건)                  │
-│   • snapshotReady: Worker 완료 감지용 (데이터 요청 조건)        │
-│                                                                 │
-│   시퀀스:                                                       │
-│   ┌──────────────────────────────────────────────────────┐      │
-│   │ DOM 변경  → dirty=true                               │      │
-│   │           → snapshotReady 유지 (이전 질의 보호)      │      │
-│   │                                                      │      │
-│   │ 질의 시작 → dirty=false, snapshotReady=false         │      │
-│   │           → Scanner 시작 (Main)                      │      │
-│   │           → Parser 시작 (Worker)                     │      │
-│   │                                                      │      │
-│   │ Scanner 완료 → 메타 정보 서버 전송                   │      │
-│   │                                                      │      │
-│   │ Parser 완료 → snapshotReady=true                     │      │
-│   │             → queryCache 사용 가능                   │      │
-│   └──────────────────────────────────────────────────────┘      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+
+#### 상태 전이
+
+| 시점 | dirty | snapshotReady | 동작 |
+|------|-------|---------------|------|
+| **초기화** | `true` | `false` | 앱 시작 |
+| **DOM 변경** | `true` | 유지 | 진행중인 질의 보호 |
+| **질의 시작** | `false` | `false` | Scanner(Main) + Parser(Worker) 시작 |
+| **Parser 완료** | - | `true` | queryCache 사용 가능 |
+| **request_data** | - | 체크 | `false`면 Worker 완료 대기 후 캐시에서 반환 |
+
+#### 왜 두 개의 플래그가 필요한가?
+
+| 문제 | 해결 |
+|------|------|
+| Scanner(Main)와 Parser(Worker)가 병렬 실행 | `dirty`: Scanner 시작 조건 |
+| Scanner 완료 ≠ Parser 완료 | `snapshotReady`: 데이터 요청 조건 |
+| dirty만 쓰면 Parser 완료 전 새 질의 가능 | 두 플래그로 시점 분리 |
+
+```mermaid
+stateDiagram-v2
+    [*] --> DOMChanged: DOM 변경
+    DOMChanged --> QueryStart: 질의 시작
+    QueryStart --> ScannerDone: Scanner 완료
+    QueryStart --> ParserDone: Parser 완료 (병렬)
+    ScannerDone --> Ready: 메타 전송
+    ParserDone --> Ready: snapshotReady=true
+    Ready --> [*]: request_data 처리
 ```
 
 ### 6.4 MutationObserver 설정
 
+#### 관찰 옵션
+
+```javascript
+{
+  childList: true,      // 자식 노드 추가/제거
+  subtree: true,        // 하위 전체 관찰
+  attributes: true,     // 속성 변경
+  attributeFilter: [    // 관심 속성만
+    'class',            // 탭/상태 변경
+    'style',            // display 변경 (탭 전환)
+    'hidden'            // 표시/숨김
+  ]
+}
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                  MutationObserver 관찰 대상                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   관찰 옵션:                                                    │
-│   {                                                             │
-│     childList: true,      // 자식 노드 추가/제거                │
-│     subtree: true,        // 하위 전체 관찰                     │
-│     attributes: true,     // 속성 변경                          │
-│     attributeFilter: [    // 관심 속성만                        │
-│       'class',            // 탭/상태 변경                       │
-│       'style',            // display 변경 (탭 전환)             │
-│       'hidden'            // 표시/숨김                          │
-│     ]                                                           │
-│   }                                                             │
-│                                                                 │
-│   관찰 범위:                                                    │
-│   • #app 또는 main 컨테이너                                     │
-│   • Copilot Widget 영역 제외                                    │
-│                                                                 │
-│   필터링:                                                       │
-│   • 스타일 변경만 있는 경우 무시                                │
-│   • 데이터 영역 변경만 dirty 플래그 설정                        │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+| 설정 | 값 |
+|------|---|
+| **관찰 범위** | `#app` 또는 `main` 컨테이너, Copilot Widget 영역 제외 |
+| **필터링** | 스타일 변경만 있는 경우 무시, 데이터 영역 변경만 dirty 플래그 설정 |
 
 ---
 
@@ -824,64 +581,42 @@ Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필
 
 ### 7.1 관리 주체
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    메뉴 구조는 서버에서 관리                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   클라이언트 역할:                                              │
-│   • 현재 URL만 전송 (page.url: "/cost/analysis")                │
-│   • 메뉴 구조 관리/전송 불필요                                  │
-│                                                                 │
-│   서버 역할:                                                    │
-│   • Platform API를 통해 메뉴 구조 캐싱                          │
-│   • 클라이언트 URL로 현재 위치 파악                             │
-│   • Fallback 시 적절한 메뉴 안내                                │
-│   • 관련 메뉴 추천 (교차 분석)                                  │
-│                                                                 │
-│   장점:                                                         │
-│   • 클라이언트 부담 감소                                        │
-│   • 메뉴 구조 변경 시 클라이언트 수정 불필요                    │
-│   • 권한별 메뉴 필터링 서버에서 처리                            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+| 역할 | 책임 |
+|------|------|
+| **클라이언트** | 현재 URL만 전송 (`page.url: "/cost/analysis"`), 메뉴 구조 관리/전송 불필요 |
+| **서버** | Platform API로 메뉴 구조 캐싱, URL로 현재 위치 파악, Fallback 시 메뉴 안내, 관련 메뉴 추천 |
+
+**장점**:
+- ✅ 클라이언트 부담 감소
+- ✅ 메뉴 구조 변경 시 클라이언트 수정 불필요
+- ✅ 권한별 메뉴 필터링 서버에서 처리
 
 ### 7.2 서버의 메뉴 정보 활용
 
+#### 서버가 관리하는 메뉴 정보
+
+```json
+{
+  "current": {
+    "path": "/cost/analysis",
+    "name": "비용 분석",
+    "breadcrumb": ["비용 관리", "비용 분석"]
+  },
+  "siblings": [
+    { "path": "/cost/dashboard", "name": "비용 대시보드" },
+    { "path": "/cost/report", "name": "비용 리포트" }
+  ],
+  "related": [
+    { "path": "/budget", "name": "예산 관리", "relation": "예산 비교" },
+    { "path": "/optimization/ri", "name": "RI 추천", "relation": "절감" }
+  ]
+}
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    서버의 메뉴 정보 활용                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   서버가 관리하는 메뉴 정보:                                    │
-│   {                                                             │
-│     current: {                                                  │
-│       path: "/cost/analysis",                                   │
-│       name: "비용 분석",                                        │
-│       breadcrumb: ["비용 관리", "비용 분석"]                    │
-│     },                                                          │
-│     siblings: [                                                 │
-│       { path: "/cost/dashboard", name: "비용 대시보드" },       │
-│       { path: "/cost/report", name: "비용 리포트" }             │
-│     ],                                                          │
-│     related: [                                                  │
-│       { path: "/budget", name: "예산 관리", relation: "예산 비교" },
-│       { path: "/optimization/ri", name: "RI 추천", relation: "절감" }
-│     ]                                                           │
-│   }                                                             │
-│                                                                 │
-│   획득 방법:                                                    │
-│   • Platform API를 통해 주기적 갱신                             │
-│   • 서버 시작 시 로드, 인메모리 캐싱                            │
-│                                                                 │
-│   갱신 시점:                                                    │
-│   • 서버 시작 시                                                │
-│   • 주기적 갱신 (1시간 등)                                      │
-│   • 메뉴 변경 이벤트 수신 시                                    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+| 항목 | 설명 |
+|------|------|
+| **획득 방법** | Platform API를 통해 주기적 갱신, 서버 시작 시 로드 후 인메모리 캐싱 |
+| **갱신 시점** | 서버 시작 시, 주기적 갱신 (1시간 등), 메뉴 변경 이벤트 수신 시 |
 
 ---
 
@@ -889,122 +624,103 @@ Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필
 
 ### 8.1 전체 시퀀스
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    WebSocket 메시지 흐름                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Client                                          Server        │
-│   ────────                                        ────────      │
-│      │                                               │          │
-│      │  ──── [1] connect ────────────────────────►  │          │
-│      │                                               │          │
-│      │  ◄─── [2] connected ──────────────────────   │          │
-│      │                                               │          │
-│      │                                               │          │
-│   ┌──┴──┐ 사용자 질의                                │          │
-│   │     │                                            │          │
-│   │  ───┼─ [3] query ────────────────────────────►  │          │
-│   │     │  {                                         │          │
-│   │     │    query: "비용 왜 높아?",                 │          │
-│   │     │    page: { url, title },                    │          │
-│   │     │    availableMetadata: [...]               │          │
-│   │     │  }                                         │          │
-│   │     │  ※ 메뉴 구조는 서버가 URL로 조회          │          │
-│   └──┬──┘                                            │          │
-│      │                                               │          │
-│      │  ◄─── [4] request_data ───────────────────   │          │
-│      │       { metadataIds: ["cost_summary", ...] } │          │
-│      │                                               │          │
-│   ┌──┴──┐ 요청된 데이터만 파싱                       │          │
-│   │     │                                            │          │
-│   │  ───┼─ [5] data_response ────────────────────►  │          │
-│   │     │  {                                         │          │
-│   │     │    data: { cost_summary: {...}, ... }     │          │
-│   │     │  }                                         │          │
-│   └──┬──┘                                            │          │
-│      │                                               │          │
-│      │  ◄─── [6] response ───────────────────────   │          │
-│      │       {                                       │          │
-│      │         answer: "비용이 15% 증가...",         │          │
-│      │         suggestions: [...]                   │          │
-│      │       }                                       │          │
-│      │                                               │          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+
+    C->>S: [1] connect
+    S->>C: [2] connected
+
+    Note over C: 사용자 질의
+    C->>S: [3] query
+    Note right of C: { query, page, metadata }
+    Note over S: 서버가 URL로 메뉴 조회
+
+    S->>C: [4] request_data
+    Note left of S: { metadataIds: [...] }
+
+    Note over C: queryCache에서 반환
+    C->>S: [5] data_response
+    Note right of C: { data: {...} }
+
+    S->>C: [6] response
+    Note left of S: { answer, suggestions }
 ```
 
 ### 8.2 메시지 타입 정의
 
+#### Client → Server
+
+**query** (질의)
+```typescript
+{
+  type: "query",
+  query: string,
+  page: { url: string, title: string, vendor?: string },
+  availableMetadata: MetadataItem[]
+}
+// 메뉴 구조는 서버가 page.url을 기반으로 Platform API에서 조회
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Client → Server                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   query (질의)                                                  │
-│   {                                                             │
-│     type: "query",                                              │
-│     query: string,                                              │
-│     page: { url: string, title: string, vendor?: string },      │
-│     availableMetadata: MetadataItem[]                           │
-│   }                                                             │
-│   ※ 메뉴 구조는 서버가 page.url을 기반으로 Platform API에서 조회                                                             │
-│                                                                 │
-│   data_response (데이터 응답)                                   │
-│   {                                                             │
-│     type: "data_response",                                      │
-│     requestId: string,                                          │
-│     data: Record<string, any>                                   │
-│   }                                                             │
-│                                                                 │
-│   api_result (API 호출 결과)                                    │
-│   {                                                             │
-│     type: "api_result",                                         │
-│     requestId: string,                                          │
-│     success: boolean,                                           │
-│     data?: any,                                                 │
-│     error?: string                                              │
-│   }                                                             │
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                      Server → Client                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   request_data (데이터 요청)                                    │
-│   {                                                             │
-│     type: "request_data",                                       │
-│     requestId: string,                                          │
-│     metadataIds: string[],                                      │
-│     preferredSources?: string[],                                │
-│     options?: {                                                 │
-│       fields?: string[],    // 추출할 필드 목록                 │
-│       filter?: object,      // 필터 조건 (예: { vendor: "aws" })│
-│       limit?: number        // 최대 행 수                       │
-│     }                                                           │
-│   }                                                             │
-│   // preferredSources: LLM이 원하는 데이터 소스 배열            │
-│   //   - 예: ["dom"], ["store"], ["dom", "store"]               │
-│   //   - 생략 시 메타 정보의 sources 기본값 사용                │
-│   // options: 스키마 기반 필터링 (LLM이 schema 정보 참고하여 구성)│
-│                                                                 │
-│   request_api (API 호출 요청)                                   │
-│   {                                                             │
-│     type: "request_api",                                        │
-│     requestId: string,                                          │
-│     endpoint: string,                                           │
-│     method: "GET" | "POST",                                     │
-│     params?: object                                             │
-│   }                                                             │
-│                                                                 │
-│   response (응답)                                               │
-│   {                                                             │
-│     type: "response",                                           │
-│     answer: string,                                             │
-│     suggestions?: Suggestion[],                                 │
-│     sources?: string[]                                          │
-│   }                                                             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+
+**data_response** (데이터 응답)
+```typescript
+{
+  type: "data_response",
+  requestId: string,
+  data: Record<string, any>
+}
+```
+
+**api_result** (API 호출 결과)
+```typescript
+{
+  type: "api_result",
+  requestId: string,
+  success: boolean,
+  data?: any,
+  error?: string
+}
+```
+
+#### Server → Client
+
+**request_data** (데이터 요청)
+```typescript
+{
+  type: "request_data",
+  requestId: string,
+  metadataIds: string[],
+  preferredSources?: string[],  // ["dom"], ["store"], ["dom", "store"]
+  options?: {
+    fields?: string[],    // 추출할 필드 목록
+    filter?: object,      // 필터 조건 (예: { vendor: "aws" })
+    limit?: number        // 최대 행 수
+  }
+}
+```
+
+> **Note**: `options`는 스키마 기반 필터링 (LLM이 schema 정보 참고하여 구성)
+
+**request_api** (API 호출 요청)
+```typescript
+{
+  type: "request_api",
+  requestId: string,
+  endpoint: string,
+  method: "GET" | "POST",
+  params?: object
+}
+```
+
+**response** (응답)
+```typescript
+{
+  type: "response",
+  answer: string,
+  suggestions?: Suggestion[],
+  sources?: string[]
+}
 ```
 
 ---
@@ -1013,166 +729,132 @@ Web Worker는 **HTML5 표준**이며, **데이터 일관성 보장을 위해 필
 
 ### 9.1 메타 정보 타입
 
-```
-MetadataItem {
-  id: string              // 고유 식별자 (예: "cost_by_service")
-  type: MetadataType      // summary | table | chart | filter | metric | context
-  sources: DataSource[]   // 데이터 소스 배열 (예: ["dom"], ["store"], ["dom", "store"])
-  label: string           // 사람이 읽을 수 있는 이름
-  description: string     // LLM이 이해할 수 있는 설명
-  estimatedTokens: number // 예상 토큰 수
+#### MetadataItem
 
-  // 테이블/차트 스키마 (DOM, Store 공통)
-  schema?: {
-    fields: FieldInfo[]   // 필드 목록
-    rowCount: number      // 총 행 수
-  }
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `id` | `string` | 고유 식별자 (예: `"cost_by_service"`) |
+| `type` | `MetadataType` | `summary` \| `table` \| `chart` \| `filter` \| `metric` \| `context` |
+| `sources` | `DataSource[]` | 데이터 소스 배열 (예: `["dom"]`, `["store"]`) |
+| `label` | `string` | 사람이 읽을 수 있는 이름 |
+| `description` | `string` | LLM이 이해할 수 있는 설명 |
+| `estimatedTokens` | `number` | 예상 토큰 수 |
+| `schema?` | `{ fields, rowCount }` | 테이블/차트 스키마 |
+| `chartType?` | `string` | `line` \| `bar` \| `pie` 등 |
+| `filterType?` | `string` | `date` \| `select` \| `multi-select` |
+| `storePath?` | `string` | 상태 경로 (예: `"internalCommon/selectedVendor"`) |
 
-  // 타입별 추가 정보
-  chartType?: string      // chart: line | bar | pie 등
-  filterType?: string     // filter: date | select | multi-select
-  storePath?: string      // store: 상태 경로 (예: "internalCommon/selectedVendor")
-}
+#### FieldInfo
 
-FieldInfo {
-  name: string            // 필드명 (예: "serviceName")
-  type: FieldType         // 필드 타입
-  label?: string          // 표시명 (예: "서비스")
-  unit?: string           // 단위 (예: "USD", "%")
-  values?: string[]       // 가능한 값 목록 (enum 타입인 경우)
-  format?: string         // 포맷 (예: "YYYY-MM", "currency")
-}
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `name` | `string` | 필드명 (예: `"serviceName"`) |
+| `type` | `FieldType` | `string` \| `number` \| `boolean` \| `date` \| `array` \| `object` |
+| `label?` | `string` | 표시명 (예: `"서비스"`) |
+| `unit?` | `string` | 단위 (예: `"USD"`, `"%"`) |
+| `values?` | `string[]` | 가능한 값 목록 (enum 타입인 경우) |
+| `format?` | `string` | 포맷 (예: `"YYYY-MM"`, `"currency"`) |
 
-FieldType = "string" | "number" | "boolean" | "date" | "array" | "object"
+#### 기타 타입
 
-MetadataType = "summary" | "table" | "chart" | "filter" | "metric" | "context"
-
-DataSource = "dom" | "store"  // 향후 확장 가능 (예: "api", "cache" 등)
-  // dom:   화면에 보이는 데이터 (필터/정렬 적용됨)
-  // store: 상태 관리 store 원본 데이터 (Vuex, Redux 등)
-```
+| 타입 | 정의 |
+|------|------|
+| `MetadataType` | `"summary"` \| `"table"` \| `"chart"` \| `"filter"` \| `"metric"` \| `"context"` |
+| `DataSource` | `"dom"` (화면 데이터) \| `"store"` (앱 상태) |
+| `FieldType` | `"string"` \| `"number"` \| `"boolean"` \| `"date"` \| `"array"` \| `"object"` |
 
 ### 9.2 스키마 예시
 
+```json
+{
+  "id": "cost_by_service",
+  "type": "table",
+  "sources": ["dom", "store"],
+  "label": "서비스별 비용",
+  "storePath": "cost/serviceList",
+  "schema": {
+    "fields": [
+      { "name": "serviceName", "type": "string", "label": "서비스" },
+      { "name": "cost", "type": "number", "label": "비용", "unit": "USD" },
+      { "name": "change", "type": "number", "label": "증감", "unit": "%" },
+      { "name": "vendor", "type": "string", "label": "벤더", "values": ["aws", "azure", "gcp"] }
+    ],
+    "rowCount": 25
+  }
+}
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    테이블 스키마 예시                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   {                                                             │
-│     id: "cost_by_service",                                      │
-│     type: "table",                                              │
-│     sources: ["dom", "store"],                                  │
-│     label: "서비스별 비용",                                     │
-│     storePath: "cost/serviceList",                              │
-│                                                                 │
-│     schema: {                                                   │
-│       fields: [                                                 │
-│         { name: "serviceName", type: "string", label: "서비스" },
-│         { name: "cost", type: "number", label: "비용", unit: "USD" },
-│         { name: "change", type: "number", label: "증감", unit: "%" },
-│         { name: "vendor", type: "string", label: "벤더",        │
-│           values: ["aws", "azure", "gcp"] }                     │
-│       ],                                                        │
-│       rowCount: 25                                              │
-│     }                                                           │
-│   }                                                             │
-│                                                                 │
-│   장점:                                                         │
-│   • DOM 테이블과 Store 데이터 동일 구조                         │
-│   • LLM이 필드 정보로 필터/선택 요청 가능                       │
-│   • enum 값 제공으로 정확한 필터 조건 구성                      │
-│   • 토큰 추정 정확도 향상                                       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+**장점**:
+- ✅ DOM 테이블과 Store 데이터 동일 구조
+- ✅ LLM이 필드 정보로 필터/선택 요청 가능
+- ✅ enum 값 제공으로 정확한 필터 조건 구성
+- ✅ 토큰 추정 정확도 향상
 
 ### 9.3 메뉴 구조 타입 (서버 측)
 
-> 메뉴 구조는 서버에서 관리합니다. 클라이언트는 page.url만 전송하고, 서버가 이를 기반으로 메뉴 정보를 조회합니다.
+> 메뉴 구조는 서버에서 관리합니다. 클라이언트는 `page.url`만 전송하고, 서버가 이를 기반으로 메뉴 정보를 조회합니다.
 
-```
-MenuStructure {           // 서버에서 관리
-  current: {
-    path: string          // 현재 URL 경로
-    name: string          // 메뉴 이름
-    breadcrumb: string[]  // 상위 메뉴 경로
-  }
-  siblings: MenuItem[]    // 동일 레벨 메뉴
-  related: RelatedMenu[]  // 관련 메뉴 (교차 분석)
-}
+#### MenuStructure
 
-MenuItem {
-  path: string
-  name: string
-}
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `current` | `{ path, name, breadcrumb }` | 현재 위치 정보 |
+| `siblings` | `MenuItem[]` | 동일 레벨 메뉴 |
+| `related` | `RelatedMenu[]` | 관련 메뉴 (교차 분석) |
 
-RelatedMenu extends MenuItem {
-  relation: string        // 관계 설명 (예: "예산 비교", "절감 추천")
-}
-```
+#### MenuItem / RelatedMenu
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `path` | `string` | URL 경로 |
+| `name` | `string` | 메뉴 이름 |
+| `relation` | `string` | (RelatedMenu만) 관계 설명 (예: "예산 비교", "절감 추천") |
 
 ### 9.4 제안 타입
 
-```
-Suggestion {
-  type: "analysis" | "menu" | "action"
-  text: string            // 표시 텍스트
-  metadataId?: string     // analysis: 추가 분석할 메타 ID
-  url?: string            // menu: 이동할 URL
-  action?: string         // action: 실행할 액션
-}
-```
+#### Suggestion
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `type` | `string` | `"analysis"` \| `"menu"` \| `"action"` |
+| `text` | `string` | 표시 텍스트 |
+| `metadataId?` | `string` | analysis: 추가 분석할 메타 ID |
+| `url?` | `string` | menu: 이동할 URL |
+| `action?` | `string` | action: 실행할 액션 |
 
 ---
 
 ## 10. 핵심 정리
 
+```mermaid
+mindmap
+  root((DOM to Context))
+    Dirty Flag
+      dirty: DOM 변경 감지
+      snapshotReady: Worker 완료
+      질의 시점에 스캔
+    데이터 스냅샷
+      queryCache 저장
+      화면 변경 대응
+      일관성 보장
+    Web Worker
+      Main: Scanner
+      Worker: Parser
+      병렬 처리
+    데이터 소스
+      DOM: 화면 데이터
+      Store: 앱 상태
+      스키마 필터링
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       핵심 설계 결정                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ✓ Dirty Flag 기반 변경 감지 (2개 플래그)                      │
-│     → dirty: DOM 변경 감지 (Scanner 시작 조건)                  │
-│     → snapshotReady: Worker 완료 감지 (데이터 요청 조건)        │
-│     → 질의 시점에 dirty면 스캔 + 데이터 스냅샷                  │
-│     → 병렬 실행 완료 시점 추적으로 데이터 일관성 보장           │
-│                                                                 │
-│   ✓ 질의 시점 데이터 스냅샷 (일관성 보장)                       │
-│     → LLM 응답 대기 중 (10-30초) 화면 변경 대응                 │
-│     → queryCache에 저장, request_data 시 캐시에서 반환          │
-│     → 메타 정보와 실제 데이터 불일치 방지                       │
-│                                                                 │
-│   ✓ Web Worker 필수 (데이터 일관성 + 병렬 처리)                 │
-│     → Main: Scanner (메타) → 서버 전송                          │
-│     → Worker: Parser (데이터) → queryCache 저장 (병렬)          │
-│     → UI 블로킹 없이 데이터 스냅샷 완료                         │
-│                                                                 │
-│   ✓ 매 질의 시 메타 정보 + 페이지 정보 전송                     │
-│     → dirty면 새로 스캔, 아니면 캐시 사용                       │
-│     → 메뉴 구조는 서버가 URL로 Platform API에서 조회            │
-│                                                                 │
-│   ✓ 대화 히스토리는 서버에서 관리 (Memory as RAG)               │
-│     → 클라이언트 부담 감소, 토큰 효율성                         │
-│                                                                 │
-│   ✓ 데이터 소스 구분 (DOM vs Store)                             │
-│     → sources: ["dom"], ["store"], ["dom", "store"] 등 배열     │
-│     → DOM: 화면에 보이는 데이터 (필터/정렬 적용)                │
-│     → Store: 앱 상태, API 원본 데이터 (Vuex, Redux 등)          │
-│     → LLM이 preferredSources 배열로 선택 가능                   │
-│     → 향후 다른 소스 추가 가능 (예: "api", "cache" 등)          │
-│                                                                 │
-│   ✓ 스키마 기반 데이터 필터링                                   │
-│     → 메타 정보에 schema 포함 (fields, rowCount)                │
-│     → LLM이 스키마 참조하여 필요한 필드/조건 요청               │
-│     → options로 fields, filter, limit 지정 가능                 │
-│     → 불필요한 데이터 전송 방지, 토큰 효율성 향상               │
-│                                                                 │
-│   ✓ 표준 웹 기술만 사용                                         │
-│     → DOM API, TreeWalker, MutationObserver                     │
-│     → Web Workers (HTML5), WebSocket (RFC 6455)                 │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+| 설계 결정 | 설명 |
+|-----------|------|
+| **Dirty Flag (2개)** | `dirty`: DOM 변경 감지 (Scanner 시작), `snapshotReady`: Worker 완료 감지 (데이터 요청 조건) |
+| **데이터 스냅샷** | LLM 응답 대기 중 화면 변경 대응, queryCache에서 반환하여 일관성 보장 |
+| **Web Worker 필수** | Main: Scanner (메타) → 서버 전송, Worker: Parser (데이터) → queryCache 저장 (병렬) |
+| **질의 시 전송** | 메타 정보 + 페이지 정보, 메뉴 구조는 서버가 URL로 조회 |
+| **대화 히스토리** | 서버에서 관리 (Memory as RAG), 클라이언트 부담 감소 |
+| **데이터 소스 구분** | `sources: ["dom"]`, `["store"]`, `["dom", "store"]` 배열, LLM이 선택 가능 |
+| **스키마 기반 필터링** | 메타 정보에 schema 포함, options로 fields/filter/limit 지정 |
+| **표준 기술** | DOM API, MutationObserver, Web Workers, WebSocket |
 
