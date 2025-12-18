@@ -412,12 +412,19 @@ flowchart TB
     subgraph QUERY["사용자 질의"]
         CHECK{"dirty?"}
         CACHE["캐시 사용"]
-        SCAN["스캔 + 스냅샷"]
+        FLAGS["dirty = false<br/>snapshotReady = false"]
     end
 
     subgraph PARALLEL["병렬 처리"]
+        direction LR
         MAIN["Main Thread<br/>Scanner 실행<br/>메타 정보 전송"]
-        WORKER["Web Worker<br/>Parser 실행<br/>queryCache 저장"]
+        WORKER["Web Worker<br/>Parser 실행<br/>snapshotReady = true"]
+    end
+
+    subgraph REQUEST["request_data 수신"]
+        CHECK2{"snapshotReady?"}
+        WAIT["Worker 완료 대기"]
+        RETURN["queryCache에서 반환"]
     end
 
     MO --> DEBOUNCE
@@ -426,15 +433,21 @@ flowchart TB
 
     DIRTY -.-> CHECK
     CHECK -->|false| CACHE
-    CHECK -->|true| SCAN
-    SCAN --> PARALLEL
-    MAIN --> PARALLEL
-    WORKER --> PARALLEL
+    CHECK -->|true| FLAGS
+    FLAGS --> MAIN
+    FLAGS --> WORKER
+
+    WORKER -.-> CHECK2
+    CHECK2 -->|true| RETURN
+    CHECK2 -->|false| WAIT
+    WAIT --> RETURN
 
     style DIRTY fill:#F59E0B,color:#fff
+    style FLAGS fill:#EF4444,color:#fff
     style MAIN fill:#4F46E5,color:#fff
     style WORKER fill:#10B981,color:#fff
     style CACHE fill:#6B7280,color:#fff
+    style RETURN fill:#10B981,color:#fff
                 </div>
             </div>
 
@@ -486,20 +499,26 @@ sequenceDiagram
     participant Server as Server
 
     User->>Main: 질의: "11월 비용 분석"
+    Note over Main: dirty=false, snapshotReady=false
 
-    par 병렬 처리
+    rect rgb(240, 245, 255)
+        Note over Main,Worker: 병렬 처리
         Main->>Main: Scanner 실행
         Main->>Server: 메타 정보 전송
-    and
         Main->>Worker: DOM 데이터 전달
         Worker->>Worker: Parser 실행
         Worker->>Cache: 스냅샷 저장
+        Note over Worker: snapshotReady = true
     end
 
     Note over User: 필터를 12월로 변경
+    Note over Main: dirty = true
     Note over Cache: queryCache 유지 (11월 데이터)
 
     Server->>Main: request_data
+    alt snapshotReady = false
+        Main->>Worker: 완료 대기
+    end
     Main->>Cache: 캐시에서 조회
     Cache->>Main: 11월 데이터 (스냅샷)
     Main->>Server: 일관된 데이터 전송
@@ -582,6 +601,102 @@ sequenceDiagram
             </div>
         </div>
 
+        <!-- 데이터 소스 -->
+        <div class="card">
+            <h2>데이터 소스 (DOM vs Store)</h2>
+
+            <p style="color: #6B7280; margin-bottom: 20px;">
+                메타 정보에 <code>sources</code> 배열을 추가하여 LLM이 데이터 소스를 선택할 수 있습니다.
+            </p>
+
+            <div class="grid-3">
+                <div class="source-card" style="border-left: 4px solid var(--primary);">
+                    <h4>sources: ["dom"]</h4>
+                    <p>화면에 렌더링된 데이터<br>필터/정렬 적용됨</p>
+                    <span class="badge badge-blue">화면 데이터</span>
+                </div>
+                <div class="source-card" style="border-left: 4px solid var(--secondary);">
+                    <h4>sources: ["store"]</h4>
+                    <p>상태 관리 store 원본 데이터<br>API 응답, 앱 상태</p>
+                    <span class="badge badge-green">앱 상태</span>
+                </div>
+                <div class="source-card" style="border-left: 4px solid var(--warning);">
+                    <h4>sources: ["dom", "store"]</h4>
+                    <p>복수 소스 지원<br>향후 확장 가능</p>
+                    <span class="badge badge-yellow">복수 소스</span>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h4>앱 상태 (Store) 주요 데이터</h4>
+                <p style="font-size: 0.85rem; color: #6B7280; margin-bottom: 10px;">
+                    ※ 상태 관리 라이브러리별 접근 방식이 다름 (Vuex, Pinia, Redux, MobX 등)
+                </p>
+                <table class="tech-table" style="margin-top: 10px;">
+                    <thead>
+                        <tr>
+                            <th>모듈/슬라이스</th>
+                            <th>데이터</th>
+                            <th>설명</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>internalCommon</td>
+                            <td>selectedVendor, dataIngest</td>
+                            <td>선택된 벤더, 수집 상태</td>
+                        </tr>
+                        <tr>
+                            <td>common</td>
+                            <td>vendors, companyList</td>
+                            <td>벤더/회사 목록</td>
+                        </tr>
+                        <tr>
+                            <td>overview</td>
+                            <td>monthlyBilled</td>
+                            <td>월별 청구 데이터</td>
+                        </tr>
+                        <tr>
+                            <td>budget</td>
+                            <td>budgetList</td>
+                            <td>예산 목록</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="highlight-box success">
+                <h4>LLM 요청 시 소스 선택</h4>
+                <p>
+                    <strong>"화면에 보이는 데이터 분석해줘"</strong> → preferredSources: ["dom"]<br>
+                    <strong>"원본 데이터 보여줘"</strong> → preferredSources: ["store"]<br>
+                    <strong>"필터 전후 비교해줘"</strong> → preferredSources: ["dom", "store"]
+                </p>
+            </div>
+
+            <h3>스키마 기반 필터링</h3>
+            <div class="grid-2">
+                <div class="highlight-box">
+                    <h4>메타 정보에 스키마 포함</h4>
+                    <p>
+                        테이블 데이터는 <strong>schema</strong> 정보 포함<br>
+                        • fields: 필드명, 타입, 가능한 값<br>
+                        • rowCount: 총 행 수<br>
+                        → LLM이 필터 조건 구성 가능
+                    </p>
+                </div>
+                <div class="highlight-box">
+                    <h4>request_data 필터링 옵션</h4>
+                    <p>
+                        LLM이 스키마 보고 옵션 지정<br>
+                        • fields: 필요한 필드만 선택<br>
+                        • filter: 조건 필터링<br>
+                        • limit: 최대 행 수 제한
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <!-- 질의 시 전송 데이터 -->
         <div class="card">
             <h2>질의 시 전송 데이터</h2>
@@ -590,39 +705,33 @@ sequenceDiagram
                 매 질의마다 다음 정보를 WebSocket으로 전송합니다.
             </p>
 
-            <div class="grid-2">
-                <div>
-                    <div class="flow-step">
-                        <div class="number">1</div>
-                        <div class="content">
-                            <h4>사용자 질의</h4>
-                            <p>"이번 달 비용이 왜 높아졌어?"</p>
-                        </div>
-                    </div>
-                    <div class="flow-step">
-                        <div class="number">2</div>
-                        <div class="content">
-                            <h4>페이지 정보</h4>
-                            <p>URL, 타이틀, 벤더 정보</p>
-                        </div>
+            <div class="grid-3">
+                <div class="flow-step">
+                    <div class="number">1</div>
+                    <div class="content">
+                        <h4>사용자 질의</h4>
+                        <p>"이번 달 비용이 왜 높아졌어?"</p>
                     </div>
                 </div>
-                <div>
-                    <div class="flow-step">
-                        <div class="number">3</div>
-                        <div class="content">
-                            <h4>메타 정보</h4>
-                            <p>화면에서 추출 가능한 데이터 목록</p>
-                        </div>
-                    </div>
-                    <div class="flow-step">
-                        <div class="number">4</div>
-                        <div class="content">
-                            <h4>메뉴 구조</h4>
-                            <p>현재 위치, 관련 메뉴 (Fallback용)</p>
-                        </div>
+                <div class="flow-step">
+                    <div class="number">2</div>
+                    <div class="content">
+                        <h4>페이지 정보</h4>
+                        <p>URL, 타이틀</p>
                     </div>
                 </div>
+                <div class="flow-step">
+                    <div class="number">3</div>
+                    <div class="content">
+                        <h4>메타 정보</h4>
+                        <p>화면에서 추출 가능한 데이터 목록</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="highlight-box success">
+                <h4>메뉴 구조는 서버에서 관리</h4>
+                <p>클라이언트는 <strong>URL만 전송</strong>하고, 서버가 Platform API를 통해 메뉴 정보를 조회합니다.</p>
             </div>
 
             <div class="highlight-box">
@@ -714,7 +823,8 @@ sequenceDiagram
     S->>C: [2] connected
 
     Note over C: 사용자 질의
-    C->>S: [3] query {query, page, metadata, menu}
+    C->>S: [3] query {query, page, metadata}
+    Note over S: 서버가 URL로 메뉴 조회
 
     S->>C: [4] request_data {metadataIds}
 
@@ -731,7 +841,7 @@ sequenceDiagram
                     <h4 style="color: var(--primary); margin-bottom: 10px;">Client → Server</h4>
                     <div class="feature-item">
                         <span class="check">→</span>
-                        <span><strong>query</strong>: 질의 + 메타 + 메뉴</span>
+                        <span><strong>query</strong>: 질의 + 페이지 + 메타</span>
                     </div>
                     <div class="feature-item">
                         <span class="check">→</span>
@@ -766,7 +876,7 @@ sequenceDiagram
 
             <div class="feature-item">
                 <span class="check">✓</span>
-                <span><strong>Dirty Flag 기반 변경 감지</strong> → DOM 변경 시 플래그만 설정, 질의 시점에 스캔</span>
+                <span><strong>Dirty Flag 기반 변경 감지 (2개 플래그)</strong> → dirty: DOM 변경 감지, snapshotReady: Worker 완료 감지</span>
             </div>
             <div class="feature-item">
                 <span class="check">✓</span>
@@ -779,6 +889,18 @@ sequenceDiagram
             <div class="feature-item">
                 <span class="check">✓</span>
                 <span><strong>자동 감지</strong> → AG-Grid, amCharts5, 시맨틱 태그 자동 인식 (코드 수정 불필요)</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">✓</span>
+                <span><strong>메뉴 구조는 서버 관리</strong> → 클라이언트는 URL만 전송, 서버가 Platform API로 조회</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">✓</span>
+                <span><strong>데이터 소스 구분</strong> → sources: ["dom"], ["store"], ["dom", "store"] 등 배열, LLM이 preferredSources로 선택</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">✓</span>
+                <span><strong>스키마 기반 필터링</strong> → 메타 정보에 schema 포함, LLM이 fields/filter/limit 옵션으로 필요한 데이터만 요청</span>
             </div>
             <div class="feature-item">
                 <span class="check">✓</span>
