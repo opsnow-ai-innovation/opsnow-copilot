@@ -5,7 +5,7 @@ FinOps AI 어시스턴트 - 화면 맥락 기반 지능형 도우미
 ## Tech Stack
 
 - **Framework**: FastAPI (Python 3.11+)
-- **LLM**: DSPy (No Framework 철학)
+- **LLM**: DSPy (No Framework 철학), 모델: `openai/gpt-5-nano`
 - **Communication**: WebSocket
 - **Vector Store**: In-Memory (ChromaDB 불필요)
 - **Cache**: Redis (대화 히스토리, 메뉴 캐시)
