@@ -42,6 +42,12 @@ temp/
 tmp/
 cache/
 
+# DSPy
+.dspy_cache/
+
+# MLflow
+mlruns/
+
 # Build
 dist/
 build/

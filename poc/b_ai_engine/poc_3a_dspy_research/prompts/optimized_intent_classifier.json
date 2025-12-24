@@ -1,0 +1,47 @@
+{
+  "traces": [],
+  "train": [],
+  "demos": [
+    {
+      "augmented": true,
+      "query": "EC2 비용 줄이려면 어떻게 해?",
+      "intent": "optimization"
+    },
+    {
+      "augmented": true,
+      "query": "납부 기한이 언제야?",
+      "intent": "billing"
+    },
+    {
+      "augmented": true,
+      "query": "어떤 서비스가 제일 비싸?",
+      "intent": "cost_inquiry"
+    },
+    {
+      "augmented": true,
+      "query": "RI 구매 추천",
+      "intent": "optimization"
+    }
+  ],
+  "signature": {
+    "instructions": "사용자 질문의 의도를 분류합니다.",
+    "fields": [
+      {
+        "prefix": "Query:",
+        "description": "사용자의 질문"
+      },
+      {
+        "prefix": "Intent:",
+        "description": "의도: 'cost_inquiry' | 'optimization' | 'billing' | 'general'"
+      }
+    ]
+  },
+  "lm": null,
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.0.4",
+      "cloudpickle": "3.1"
+    }
+  }
+}

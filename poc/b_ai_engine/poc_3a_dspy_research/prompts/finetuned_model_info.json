@@ -1,0 +1,5 @@
+{
+  "finetuned_model_id": "ft:gpt-4.1-nano-2025-04-14:opsnow::CqEgb4dN",
+  "base_model": "openai/gpt-4.1-nano-2025-04-14",
+  "trainset_size": 30
+}

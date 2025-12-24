@@ -1,0 +1,51 @@
+{
+  "predict": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "query": "AWS 리전 목록 알려줘",
+        "reasoning": "Not supplied for this particular example.",
+        "intent": "general"
+      },
+      {
+        "query": "S3 스토리지 비용 현황",
+        "intent": "cost_inquiry"
+      },
+      {
+        "query": "EC2 비용 줄이려면 어떻게 해?",
+        "intent": "optimization"
+      },
+      {
+        "query": "비용 줄이는 방법 뭐 있어?",
+        "intent": "optimization"
+      }
+    ],
+    "signature": {
+      "instructions": "You are a cost-management assistant for AWS cloud costs. Your task is to classify a user’s cost-related question into one of four intents: cost_inquiry, optimization, billing, or general. The system will provide a user query (Query: ...). You must output two fields in the following format:\n\n- Reasoning: Provide a brief, non-sensitive justification for why you chose the Intent (1–3 sentences). Do not reveal detailed chain-of-thought or step-by-step internal methods; keep it concise and suitable for production.\n- Intent: One of the allowed labels: cost_inquiry, optimization, billing, general.\n\nGuidelines:\n- Use domain cues from the query (e.g., mentions of EC2, RDS, Lambda, S3, or topics like monthly spend, cost drivers, cost optimization methods like Reserved Instances or Savings Plans) to decide the intent.\n- Map the query to:\n  - cost_inquiry if it asks for current spend, cost by service, cost breakdown, month-over-month comparisons, or similar cost data.\n  - optimization if it references optimization, RI, Savings Plans, rightsizing, or cost-reduction strategies.\n  - billing if it concerns invoices, billing status, payment issues, refunds, or charge disputes.\n  - general for questions not clearly covered above.\n- Output must follow the exact prefixes: \"Reasoning:\" and \"Intent:\" on separate lines after the provided \"Query:\".\n- If needed in production, Reasoning can be redacted or summarized; ensure the Intent remains accurate.\n\nEnd.",
+      "fields": [
+        {
+          "prefix": "Query:",
+          "description": "사용자의 질문"
+        },
+        {
+          "prefix": "Reasoning: Let's think step by step in order to",
+          "description": "${reasoning}"
+        },
+        {
+          "prefix": "Intent:",
+          "description": "의도: 'cost_inquiry' | 'optimization' | 'billing' | 'general'"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.0.4",
+      "cloudpickle": "3.1"
+    }
+  }
+}
