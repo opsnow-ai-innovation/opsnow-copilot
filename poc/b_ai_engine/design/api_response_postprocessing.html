@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 응답 후처리 - 클라이언트 기반 코드 실행</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --accent: #e94560;
+            --accent-secondary: #00d9ff;
+            --code-bg: #0d1117;
+            --border-color: #30363d;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        h1 {
+            font-size: 2.2rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            border-bottom: 3px solid var(--accent);
+            padding-bottom: 1rem;
+        }
+
+        h1 + p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            color: var(--accent-secondary);
+            margin: 2rem 0 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 0.8rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background: var(--bg-tertiary);
+            color: var(--accent-secondary);
+            font-weight: 600;
+        }
+
+        .mermaid {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            text-align: center;
+        }
+
+        .section {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-box {
+            display: inline-block;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--accent-secondary);
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin: 0.5rem;
+            text-align: center;
+        }
+
+        .stat-box .value {
+            font-size: 2rem;
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .stat-box .label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>API 응답 후처리</h1>
+        <p>클라이언트 기반 스키마 추출 & JavaScript 코드 실행</p>
+
+        <!-- 핵심 수치 -->
+        <div style="text-align: center; margin: 2rem 0;">
+            <div class="stat-box">
+                <div class="value">26.6MB</div>
+                <div class="label">클라이언트 데이터</div>
+            </div>
+            <div class="stat-box">
+                <div class="value">1.3KB</div>
+                <div class="label">서버 전송 (스키마)</div>
+            </div>
+            <div class="stat-box">
+                <div class="value">~500B</div>
+                <div class="label">코드 수신</div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- 전체 흐름 -->
+        <h2>전체 흐름</h2>
+        <p>📡 API Request 도구 실행 시점부터 시작 (에러 리트라이 포함)</p>
+        <div class="mermaid">
+flowchart TB
+    subgraph Client["클라이언트 (브라우저)"]
+        IDB["💾 IndexedDB<br/>(API 응답 캐시)"]
+        Schema["📋 스키마 추출"]
+        Exec["⚡ eval(code)"]
+        Check{성공?}
+        Result["✅ 결과"]
+        Error["❌ 에러"]
+    end
+
+    WS["🔌 WebSocket"]
+
+    subgraph Server["서버 (Backend)"]
+        subgraph Processor["📡 API 응답 처리 모듈"]
+            P1["① 스키마 요청"]
+            P2["② 스키마 수신"]
+            P3["③ LLM 코드 생성"]
+            P4["④ 코드 전송"]
+            P5["⑤ 결과 수신"]
+            P6["⑥ 에러 처리"]
+        end
+        Gen["🤖 LLM"]
+        Next["➡️ 결과 응답"]
+    end
+
+    P1 -->|"요청"| WS
+    WS --> IDB
+    IDB --> Schema
+    Schema -->|"응답"| WS
+    WS --> P2
+    P2 --> P3
+    P3 --> Gen
+    Gen --> P3
+    P3 --> P4
+    P4 -->|"코드"| WS
+    WS --> Exec
+    IDB -.->|"원본 데이터"| Exec
+    Exec --> Check
+    Check -->|"Yes"| Result
+    Check -->|"No"| Error
+    Result -->|"결과"| WS
+    WS --> P5
+    P5 --> Next
+    Error -->|"에러+스키마"| WS
+    WS --> P6
+    P6 -->|"재시도"| P3
+
+    style IDB fill:#e74c3c,color:#fff
+    style Schema fill:#9b59b6,color:#fff
+    style Processor fill:#0f3460
+    style Gen fill:#3498db,color:#fff
+    style Exec fill:#f39c12,color:#000
+    style Check fill:#f39c12,color:#000
+    style Result fill:#27ae60,color:#fff
+    style Error fill:#e74c3c,color:#fff
+    style Next fill:#1abc9c,color:#fff
+    style WS fill:#6c757d,color:#fff
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>단계</th><th>처리 모듈 동작</th><th>통신</th><th>크기</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>①</td><td>스키마 요청</td><td>→ Client (WebSocket)</td><td>-</td></tr>
+                <tr><td>②</td><td>스키마 수신</td><td>← Client (IndexedDB에서 추출)</td><td>~1.3KB</td></tr>
+                <tr><td>③</td><td>LLM 코드 생성</td><td>내부 (스키마 기반 JS 코드 생성)</td><td>-</td></tr>
+                <tr><td>④</td><td>코드 전송</td><td>→ Client (WebSocket)</td><td>~500B</td></tr>
+                <tr><td>⑤</td><td>결과 수신</td><td>← Client (성공 시) → 결과 응답</td><td>~100B</td></tr>
+                <tr><td>⑥</td><td>에러 처리</td><td>← Client (실패 시) → ③ 재시도</td><td>~2KB</td></tr>
+            </tbody>
+        </table>
+
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#0f3460',
+                primaryTextColor: '#eaeaea',
+                primaryBorderColor: '#30363d',
+                lineColor: '#00d9ff',
+                secondaryColor: '#16213e',
+                tertiaryColor: '#1a1a2e'
+            }
+        });
+
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                const diagrams = document.querySelectorAll('.mermaid svg');
+                diagrams.forEach(diagram => {
+                    const foreignObjects = diagram.querySelectorAll('foreignObject');
+                    foreignObjects.forEach(fo => {
+                        const currentWidth = parseInt(fo.getAttribute('width')) || 150;
+                        fo.setAttribute('width', Math.max(currentWidth * 1.5, 250));
+                    });
+                });
+            }, 500);
+        });
+    </script>
+</body>
+</html>

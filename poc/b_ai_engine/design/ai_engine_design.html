@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B. AI 추론 엔진 & 도구 PoC 상세 설계</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --accent: #e94560;
+            --accent-secondary: #00d9ff;
+            --code-bg: #0d1117;
+            --border-color: #30363d;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            border-bottom: 3px solid var(--accent);
+            padding-bottom: 1rem;
+        }
+
+        h1 + p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            color: var(--accent-secondary);
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            color: var(--text-primary);
+            margin: 1.5rem 0 0.8rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+        }
+
+        a {
+            color: #f39c12;
+            text-decoration: underline;
+        }
+
+        a:hover {
+            color: #f1c40f;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 0.8rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background: var(--bg-tertiary);
+            color: var(--accent-secondary);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        code {
+            font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+
+        .mermaid {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            text-align: center;
+        }
+
+        /* 컨텍스트 누적 흐름 다이어그램 전용 스타일 */
+        .context-flow-diagram svg {
+            min-width: 100%;
+        }
+        .context-flow-diagram .node foreignObject {
+            overflow: visible !important;
+        }
+        .context-flow-diagram .node foreignObject > div {
+            min-width: 220px !important;
+            white-space: pre-wrap !important;
+        }
+
+        .tech-stack {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin: 1rem 0;
+        }
+
+        .tech-badge {
+            background: var(--bg-tertiary);
+            color: var(--accent-secondary);
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            border: 1px solid var(--accent-secondary);
+        }
+
+        .section {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .highlight {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 2rem 0;
+        }
+
+        .folder-structure {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .folder-structure .folder {
+            color: var(--accent-secondary);
+        }
+
+        .folder-structure .file {
+            color: var(--text-secondary);
+        }
+
+        .folder-structure .comment {
+            color: #6a737d;
+        }
+
+        /* 목차 스타일 */
+        .toc {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            margin: 2rem 0;
+        }
+
+        .toc h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1.3rem;
+            color: var(--accent);
+            border-bottom: none;
+        }
+
+        .toc ol {
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+
+        .toc li {
+            margin: 0.5rem 0;
+        }
+
+        .toc a {
+            color: var(--accent-secondary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .toc a:hover {
+            color: var(--accent);
+            text-decoration: underline;
+        }
+
+        .toc .sub-toc {
+            margin-top: 0.3rem;
+            padding-left: 1.2rem;
+            font-size: 0.9rem;
+        }
+
+        .toc .sub-toc li {
+            margin: 0.3rem 0;
+        }
+
+        .toc .sub-toc a {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>B. AI 추론 엔진 & 도구 PoC 상세 설계</h1>
+        <p>PoC-3b (ReAct Loop), PoC-5 (Human Feedback), PoC-6 (API Request) 통합 설계</p>
+
+        <!-- 목차 -->
+        <nav class="toc">
+            <h2>목차</h2>
+            <ol>
+                <li><a href="#overview">개요</a></li>
+                <li><a href="#architecture">전체 아키텍처</a>
+                    <ol class="sub-toc">
+                        <li><a href="#arch-system">전체 시스템 구조</a></li>
+                        <li><a href="#arch-context">컨텍스트 누적 흐름</a></li>
+                        <li><a href="#arch-risk">위험도 기반 Human Feedback 트리거</a></li>
+                        <li><a href="#arch-error">에러 및 타임아웃 처리</a></li>
+                        <li><a href="#arch-callback">Callback Manager 인터페이스</a></li>
+                        <li><a href="#arch-cli">CLI 테스트 환경</a></li>
+                        <li><a href="#arch-rag">C 계층 인터페이스 (블랙박스)</a></li>
+                        <li><a href="#arch-response">응답 포맷</a></li>
+                    </ol>
+                </li>
+                <li><a href="#folder">폴더 구조</a></li>
+                <li><a href="#react">ReAct Loop 설계</a>
+                    <ol class="sub-toc">
+                        <li><a href="#react">ReAct 패턴 개요</a></li>
+                        <li><a href="#reason-output">Reason 출력 구조</a></li>
+                    </ol>
+                </li>
+                <li><a href="#human-feedback">Human Feedback Tool 설계</a></li>
+                <li><a href="#api-request">API Request Tool 설계</a></li>
+                <li><a href="#test">테스트 시나리오</a></li>
+            </ol>
+        </nav>
+
+        <!-- 1. 개요 -->
+        <h2 id="overview">1. 개요</h2>
+
+        <h3>1.1 목표</h3>
+        <p>DSPy 프레임워크 기반으로 FinOps AI 어시스턴트의 핵심 추론 엔진과 도구를 구현한다.</p>
+
+        <h3>1.2 범위</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>PoC</th>
+                    <th>핵심 기능</th>
+                    <th>의존성</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>3b</td>
+                    <td>ReAct Loop (Reason → Act → Observe)</td>
+                    <td>3a (DSPy)</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td>Human Feedback Tool (사용자 되물음)</td>
+                    <td>3b</td>
+                </tr>
+                <tr>
+                    <td>6</td>
+                    <td>API Request Tool (데이터 요청)</td>
+                    <td>3b</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>1.3 기술 스택</h3>
+        <div class="tech-stack">
+            <span class="tech-badge">DSPy</span>
+            <span class="tech-badge">OpenAI API (gpt-5-nano)</span>
+            <span class="tech-badge">asyncio</span>
+            <span class="tech-badge">Python 3.11+</span>
+        </div>
+
+        <hr>
+
+        <!-- 2. 전체 아키텍처 -->
+        <h2 id="architecture">2. 전체 아키텍처</h2>
+
+        <h3 id="arch-system">2.1 전체 시스템 구조</h3>
+        <div class="mermaid">
+flowchart TB
+    subgraph Input["입력 계층"]
+        Q[/"사용자 질문"/]
+        DOM[/"화면 DOM<br/>(~2000 토큰)"/]
+    end
+
+    subgraph RAG["정보 소스 계층 (C) - 블랙박스"]
+        SearchCtx["🔍 search_context(query)<br/>→ ContextResult"]
+    end
+
+    subgraph ReActAgent["ReAct Agent (max 5회 반복)"]
+        CTX["📋 Context Manager<br/>(질문+DOM+RAG 통합)"]
+
+        subgraph Loop["ReAct Loop"]
+            Reason["🧠 Reason<br/>(LLM 추론)"]
+            Act["⚡ Act<br/>(행동 결정)"]
+            Router{"Tool Router"}
+            Observe["👁️ Observe<br/>(결과 관찰)"]
+        end
+
+        Reason --> Act
+        Act --> Router
+    end
+
+    subgraph Tools["도구 계층 (B)"]
+        subgraph HumanTool["ask_human"]
+            Risk{"🚦 위험도<br/>판단"}
+            HF["👤 Human<br/>Feedback"]
+        end
+        API["📡 API Request"]
+        PostProc["🔄 ProgramOfThought<br/>응답 후처리"]
+    end
+
+    subgraph Callback["콜백 계층"]
+        CM["Callback Manager<br/>(Interface)"]
+        Mock["🔧 Mock<br/>(CLI 테스트)"]
+        Real["🌐 WebSocket<br/>(프로덕션)"]
+    end
+
+    Client["🖥️ Client"]
+
+    %% 입력 흐름 (①②)
+    Q -->|"①"| CTX
+    DOM -->|"②"| CTX
+
+    %% RAG 조회 (③④) - 블랙박스
+    Q -->|"③ query"| SearchCtx
+    SearchCtx -->|"④ ContextResult"| CTX
+
+    %% ReAct Loop (⑤)
+    CTX -->|"⑤"| Reason
+
+    %% Tool Router 분기 (⑥⑦)
+    Router -->|"⑥-a ask_human"| Risk
+    Risk -->|"⑦-a critical/high"| HF
+    Risk -->|"⑦-b low: 스킵"| Observe
+    Router -->|"⑥-b request_api"| API
+    Router -->|"⑥-c finish"| Answer[/"✅ 최종 답변"/]
+
+    %% 도구 → Callback (⑧)
+    HF -->|"⑧"| CM
+    API -->|"⑧"| CM
+
+    %% Callback 구현체
+    CM -.->|"PoC"| Mock
+    CM -.->|"Production"| Real
+    Real <-->|"⑨"| Client
+    Mock <-->|"⑨"| CLI["💻 터미널"]
+
+    %% API 응답 후처리 (⑩)
+    CM -->|"⑩ 대용량 응답"| PostProc
+    PostProc -->|"⑪ 핵심 데이터"| Observe
+
+    %% Human Feedback은 직접 Observe로
+    CM -->|"⑩ 사용자 응답"| Observe
+
+    %% Observation 반환 (⑫)
+    Observe -->|"⑫ 컨텍스트 누적"| CTX
+
+    %% 스타일
+    style Q fill:#e94560,color:#fff
+    style DOM fill:#e94560,color:#fff
+    style Answer fill:#00d9ff,color:#000
+    style Risk fill:#f39c12,color:#000
+    style CM fill:#0f3460
+    style Client fill:#16213e
+    style CLI fill:#16213e
+    style SearchCtx fill:#9b59b6,color:#fff
+    style PostProc fill:#8e44ad,color:#fff
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>순서</th><th>흐름</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>①②</strong></td><td>입력 → Context</td><td>사용자 질문 + 화면 DOM을 Context Manager에 전달</td></tr>
+                <tr style="background: rgba(155, 89, 182, 0.2);"><td><strong>③</strong></td><td>search_context 호출</td><td>C 계층에 query 전달 (블랙박스)</td></tr>
+                <tr style="background: rgba(155, 89, 182, 0.2);"><td><strong>④</strong></td><td>ContextResult 수신</td><td>memory, faq, menu 통합 결과 반환</td></tr>
+                <tr><td><strong>⑤</strong></td><td>Context → Reason</td><td>통합된 컨텍스트로 LLM 추론 시작</td></tr>
+                <tr><td><strong>⑥</strong></td><td>Router 분기</td><td>a) ask_human, b) request_api, c) finish 중 선택</td></tr>
+                <tr><td><strong>⑦</strong></td><td>위험도 판단</td><td>a) critical/high → 확인 요청, b) low → 스킵</td></tr>
+                <tr><td><strong>⑧</strong></td><td>도구 → Callback</td><td>ask_human: input() 대기 / request_api: 2초 후 Mock 데이터</td></tr>
+                <tr><td><strong>⑨</strong></td><td>Client 통신</td><td>Mock(터미널) 또는 Real(WebSocket) 통신</td></tr>
+                <tr style="background: rgba(142, 68, 173, 0.2);"><td><strong>⑩</strong></td><td>응답 분기</td><td>ask_human → 직접 Observe / request_api → 후처리 분기</td></tr>
+                <tr style="background: rgba(142, 68, 173, 0.2);"><td><strong>⑪</strong></td><td>ProgramOfThought 후처리</td><td>대용량 API 응답 시 핵심 데이터만 추출 (Python 코드 생성→실행)</td></tr>
+                <tr><td><strong>⑫</strong></td><td>컨텍스트 누적</td><td>결과를 Context에 추가 → ⑤로 반복 (max 5회)</td></tr>
+            </tbody>
+        </table>
+
+        <table>
+            <thead>
+                <tr><th>계층</th><th>요소</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td rowspan="2"><strong>입력</strong></td><td>사용자 질문</td><td>자연어 질문 (예: "비용 줄여줘")</td></tr>
+                <tr><td>화면 DOM</td><td>현재 화면의 비용/자산 정보 (~2000 토큰)</td></tr>
+                <tr style="background: rgba(155, 89, 182, 0.2);"><td><strong>정보 소스 (C)</strong></td><td>🔍 search_context</td><td>블랙박스 - memory, faq, menu 통합 조회</td></tr>
+                <tr><td rowspan="5"><strong>ReAct Agent</strong></td><td>Context Manager</td><td>질문 + DOM + RAG 결과 통합 관리</td></tr>
+                <tr><td>🧠 Reason</td><td>LLM이 컨텍스트 기반 상황 분석</td></tr>
+                <tr><td>⚡ Act</td><td>다음 행동 결정 (도구 or finish)</td></tr>
+                <tr><td>Tool Router</td><td>선택된 도구로 요청 라우팅</td></tr>
+                <tr><td>👁️ Observe</td><td>도구 결과를 컨텍스트에 추가</td></tr>
+                <tr><td rowspan="4"><strong>도구 (B)</strong></td><td>🚦 위험도 판단</td><td>critical/high → 확인, low → 스킵</td></tr>
+                <tr><td>👤 Human Feedback</td><td>사용자에게 되물음 (timeout: 2분)</td></tr>
+                <tr><td>📡 API Request</td><td>클라이언트에 데이터 요청 (timeout: 60초)</td></tr>
+                <tr><td>🔄 ProgramOfThought 후처리</td><td>대용량 API 응답 → 핵심 데이터 추출</td></tr>
+                <tr><td rowspan="3"><strong>콜백</strong></td><td>Callback Manager</td><td>도구↔클라이언트 통신 인터페이스</td></tr>
+                <tr><td>🔧 Mock</td><td>CLI 테스트용 (input, TEST_DATA)</td></tr>
+                <tr><td>🌐 WebSocket</td><td>프로덕션용 (PoC-1 통합)</td></tr>
+            </tbody>
+        </table>
+
+        <h3 id="arch-context">2.2 컨텍스트 누적 흐름</h3>
+        <p>ReAct Loop 각 Step에서 컨텍스트가 어떻게 누적되는지 보여줍니다.</p>
+
+        <div class="mermaid context-flow-diagram">
+%%{init: {'flowchart': {'useMaxWidth': false}}}%%
+flowchart TB
+    subgraph Step0["초기 컨텍스트"]
+        direction LR
+        Q0["`📝 **질문**
+        비용 줄여줘             `"]
+        D0["`🖥️ **DOM**
+        EC2 $15,000
+        Lambda $3,000...`"]
+        R0["`📚 **RAG**
+        ContextResult
+        (faq, menu)`"]
+    end
+
+    subgraph Step1["Step 1: 서비스 명확화"]
+        direction LR
+        T1["`🧠 **Thought**
+        사용자가 비용 절감을 원하지만
+        어떤 서비스인지 불명확함    `"]
+        A1["`⚡ **Action**
+        ask_human            `"]
+        O1["`👁️ **Observation**
+        사용자 응답: EC2요       `"]
+    end
+
+    subgraph Step2["Step 2: 데이터 수집"]
+        direction LR
+        T2["`🧠 **Thought**
+        EC2 비용 상세 데이터가
+        필요함               `"]
+        A2["`⚡ **Action**
+        request_api          `"]
+        O2["`👁️ **Observation**
+        nov: $10,000
+        dec: $15,000         `"]
+    end
+
+    subgraph Step3["Step 3: 분석 완료"]
+        direction LR
+        T3["`🧠 **Thought**
+        EC2 비용 50% 증가 확인
+        RI 미적용이 원인
+        답변 가능             `"]
+        A3["`⚡ **Action**
+        finish               `"]
+        F3["`✅ **Answer**
+        EC2 비용이 50% 증가했습니다
+        RI 적용을 권장합니다      `"]
+    end
+
+    Step0 --> Step1 --> Step2 --> Step3
+
+    style Q0 fill:#e94560,color:#fff
+    style D0 fill:#e94560,color:#fff
+    style R0 fill:#9b59b6,color:#fff
+    style F3 fill:#00d9ff,color:#000
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>Step</th><th>컨텍스트 내용</th><th>토큰 (예상)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>초기</strong></td><td>질문 + DOM + RAG (memory, faq, menu)</td><td>~2,500</td></tr>
+                <tr><td><strong>Step 1 후</strong></td><td>+ Thought1 + Action1 + Observation1</td><td>~2,800</td></tr>
+                <tr><td><strong>Step 2 후</strong></td><td>+ Thought2 + Action2 + Observation2</td><td>~3,200</td></tr>
+                <tr><td><strong>Step 3</strong></td><td>최종 답변 생성</td><td>~3,500</td></tr>
+            </tbody>
+        </table>
+
+        <h3 id="arch-risk">2.3 위험도 기반 Human Feedback 트리거</h3>
+        <p><code>ask_human</code> 호출 시 위험도에 따라 실제 사용자 확인 여부를 결정합니다.</p>
+
+        <div class="mermaid">
+flowchart TD
+    Start["ask_human 호출"] --> Detect["액션 키워드 감지"]
+
+    Detect --> Check{"위험도 레벨?"}
+
+    Check -->|"🔴 critical<br/>(삭제, 결제)"| MustAsk["무조건 확인"]
+    Check -->|"🟠 high<br/>(설정 변경)"| ConfCheck{"신뢰도 < 80%?"}
+    Check -->|"🟢 medium/low<br/>(조회, 분석)"| Skip["확인 스킵"]
+
+    ConfCheck -->|"Yes"| ShouldAsk["확인 요청"]
+    ConfCheck -->|"No"| Skip
+
+    MustAsk --> Call["Callback Manager 호출"]
+    ShouldAsk --> Call
+    Skip --> Default["기본값 또는 자동 진행"]
+
+    Call --> Wait{"응답 대기<br/>(2분)"}
+    Wait -->|"응답 수신"| Return["Observation 반환"]
+    Wait -->|"타임아웃"| Timeout["기본값 반환"]
+
+    Default --> Return
+    Timeout --> Return
+
+    style MustAsk fill:#e94560
+    style ShouldAsk fill:#f39c12
+    style Skip fill:#27ae60
+    style Timeout fill:#e74c3c
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>위험도</th><th>키워드 예시</th><th>동작</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>🔴 <strong>critical</strong></td><td>삭제, 종료, 결제, 해지</td><td>항상 사용자 확인 필수</td></tr>
+                <tr><td>🟠 <strong>high</strong></td><td>변경, 수정, 적용, 설정</td><td>신뢰도 80% 미만 시 확인</td></tr>
+                <tr><td>🟢 <strong>medium</strong></td><td>분석, 비교, 추천</td><td>확인 없이 진행</td></tr>
+                <tr><td>🟢 <strong>low</strong></td><td>조회, 확인, 보기</td><td>확인 없이 진행</td></tr>
+            </tbody>
+        </table>
+
+        <h3 id="arch-error">2.4 에러 및 타임아웃 처리</h3>
+
+        <div class="mermaid">
+flowchart TD
+    subgraph Normal["정상 흐름"]
+        Tool["도구 실행"] --> CM["Callback Manager"]
+        CM --> Wait["응답 대기"]
+        Wait --> Success["✅ 성공"]
+    end
+
+    subgraph Errors["예외 처리"]
+        Wait -->|"ask_human 2분"| T1["⏱️ 타임아웃"]
+        Wait -->|"request_api 60초"| T2["⏱️ 타임아웃"]
+        CM -->|"연결 끊김"| E1["🔌 연결 오류"]
+        CM -->|"잘못된 응답"| E2["❌ 파싱 오류"]
+    end
+
+    T1 --> Fallback1["기본 응답: '사용자 응답 없음'"]
+    T2 --> Fallback2["기본 응답: '데이터 요청 실패'"]
+    E1 --> Retry["재시도 (1회)"]
+    E2 --> Fallback3["기본 응답 반환"]
+
+    Retry -->|"실패"| Fallback3
+
+    Success --> Continue["다음 Step 진행"]
+    Fallback1 --> Continue
+    Fallback2 --> Continue
+    Fallback3 --> Continue
+
+    style Success fill:#27ae60
+    style T1 fill:#f39c12
+    style T2 fill:#f39c12
+    style E1 fill:#e74c3c
+    style E2 fill:#e74c3c
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>예외 상황</th><th>처리 방식</th><th>Observation 값</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>ask_human 타임아웃</strong></td><td>2분 후 타임아웃 Observation 반환</td><td>"사용자 응답 없음 (타임아웃)" → LLM이 상황에 맞는 응답 생성</td></tr>
+                <tr><td><strong>request_api 타임아웃</strong></td><td>60초 후 기본값 반환</td><td>"데이터 요청 실패 (타임아웃)"</td></tr>
+                <tr><td><strong>WebSocket 연결 끊김</strong></td><td>1회 재시도 후 실패 처리</td><td>"연결 오류"</td></tr>
+                <tr><td><strong>응답 파싱 오류</strong></td><td>기본값 반환</td><td>"응답 처리 실패"</td></tr>
+                <tr><td><strong>MAX_ITERATIONS 도달</strong></td><td>Reason이 메뉴 선택 후 Fallback 응답</td><td>아래 상세 참고</td></tr>
+            </tbody>
+        </table>
+
+        <div class="section">
+            <h4>MAX_ITERATIONS 도달 시 처리</h4>
+            <p>5회 반복 후에도 완료되지 않으면, Reason이 Loop 중 수집된 컨텍스트를 기반으로 메뉴를 선택합니다.</p>
+
+<pre><code>Thought: 5회 시도했으나 완전한 분석 불가. EC2 관련 질문이었으므로 RI Management 메뉴 추천.
+Action: finish
+Answer: 현재 문의하신 내용은 완전한 파악이 어렵습니다.
+        RI Management 메뉴에서 확인해보시겠어요? → /cost/ri-management
+
+        💡 더 구체적인 질문으로 다시 시도해보세요.</code></pre>
+
+            <table>
+                <thead>
+                    <tr><th>단계</th><th>동작</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>1. 컨텍스트 분석</td><td>Loop 중 수집된 Observations 기반 키워드 파악</td></tr>
+                    <tr><td>2. 메뉴 선택</td><td>ContextResult.menu에서 관련 메뉴 선택 (LLM 판단)</td></tr>
+                    <tr><td>3. Fallback 응답</td><td>"파악 어려움 + 메뉴 안내 + 재질문 유도"</td></tr>
+                </tbody>
+            </table>
+            <p><strong>Fallback:</strong> LLM 판단이 어려우면 <code>menu[0]</code> (rank 1) 사용</p>
+        </div>
+
+        <h3 id="arch-callback">2.5 Callback Manager 인터페이스</h3>
+        <p>Mock(테스트)과 Real(프로덕션) 구현체가 동일한 인터페이스를 사용합니다.</p>
+
+        <div class="mermaid">
+classDiagram
+    class CallbackManagerInterface {
+        &lt;&lt;interface&gt;&gt;
+        +request_and_wait(request, timeout) Any
+        +resolve(request_id, data) void
+    }
+
+    class MockCallbackManager {
+        -test_data: dict
+        +request_and_wait() ask_human→input(), request_api→2초 후 TEST_DATA
+    }
+
+    class WebSocketCallbackManager {
+        -websocket: WebSocket
+        -pending_requests: dict
+        +request_and_wait() WebSocket 송수신
+        +resolve() Future 완료
+    }
+
+    CallbackManagerInterface <|.. MockCallbackManager : implements
+    CallbackManagerInterface <|.. WebSocketCallbackManager : implements
+
+    ReActAgent --> CallbackManagerInterface : uses
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>구현체</th><th>용도</th><th>ask_human 처리</th><th>request_api 처리</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>MockCallbackManager</strong></td><td>CLI 테스트</td><td><code>input()</code> 대기</td><td>2초 대기 후 TEST_DATA 반환</td></tr>
+                <tr><td><strong>WebSocketCallbackManager</strong></td><td>프로덕션</td><td>WebSocket 전송 + Future 대기</td><td>WebSocket 전송 + Future 대기</td></tr>
+            </tbody>
+        </table>
+
+        <h3 id="arch-cli">2.6 CLI 테스트 환경 (Mock Callback)</h3>
+        <p>PoC 독립 실행을 위해 <strong>CLI 기반 Mock Callback</strong>으로 테스트합니다. 실제 WebSocket 연동은 PoC-1 통합 시 적용합니다.</p>
+
+        <div class="mermaid">
+flowchart LR
+    subgraph "CLI 테스트 환경"
+        User["👤 터미널 입력"]
+        Mock["🔧 Mock Callback"]
+        Agent["🤖 ReAct Agent"]
+        TestData["📦 TEST_DATA<br/>(api_result.json)"]
+    end
+
+    Agent -->|"① ask_human"| Mock
+    Mock -->|"② input()"| User
+    User -->|"③ 응답"| Mock
+    Mock -->|"④ Observation"| Agent
+
+    Agent -->|"① request_api"| Mock
+    Mock -->|"② 2초 대기"| TestData
+    TestData -->|"③ Mock 데이터"| Mock
+    Mock -->|"④ Observation"| Agent
+
+    style User fill:#e94560,color:#fff
+    style Mock fill:#f39c12,color:#000
+    style Agent fill:#0f3460
+    style TestData fill:#27ae60,color:#fff
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>요소</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>👤 <strong>터미널 입력</strong></td><td>CLI에서 사용자가 직접 입력 (<code>input()</code>)</td></tr>
+                <tr><td>🔧 <strong>Mock Callback</strong></td><td>WebSocket 대신 로컬에서 콜백 시뮬레이션</td></tr>
+                <tr><td>🤖 <strong>ReAct Agent</strong></td><td>실제 추론 엔진 (프로덕션과 동일)</td></tr>
+                <tr><td>📦 <strong>TEST_DATA</strong></td><td>api_result.json 기반 Mock 데이터</td></tr>
+                <tr><td><strong>ask_human 흐름</strong></td><td>Agent → Mock → input() 대기 → 사용자 입력 → Agent</td></tr>
+                <tr><td><strong>request_api 흐름</strong></td><td>Agent → Mock → 2초 대기 → TEST_DATA 반환 → Agent</td></tr>
+            </tbody>
+        </table>
+
+        <h3 id="arch-rag">2.7 C 계층 인터페이스 명세 (블랙박스)</h3>
+        <p>C 계층(메모리/RAG)은 단일 인터페이스로 제공되며, B 계층은 내부 구현을 알 필요 없이 호출만 합니다.</p>
+
+        <h4>함수 시그니처</h4>
+        <pre><code>def search_context(query: str) -> ContextResult</code></pre>
+
+        <table>
+            <thead>
+                <tr><th>항목</th><th>값</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>입력</strong></td><td><code>query: str</code> - 사용자 질의 (원본)</td></tr>
+                <tr><td><strong>출력</strong></td><td><code>ContextResult</code> - 통합 조회 결과</td></tr>
+                <tr><td><strong>호출 시점</strong></td><td>ReAct Loop 진입 전 1회</td></tr>
+            </tbody>
+        </table>
+
+        <h4>ContextResult 구조</h4>
+        <pre><code>@dataclass
+class ContextResult:
+    memory: list[str]    # 관련 대화 히스토리 (없으면 [])
+    faq: list[str]       # 관련 FAQ/Manual (없으면 [])
+    menu: list[dict]     # 관련 메뉴 정보 - 랭킹순 (없으면 [])</code></pre>
+
+        <table>
+            <thead>
+                <tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>memory</code></td><td><code>list[str]</code></td><td>✅</td><td>관련 대화 히스토리 (없으면 <code>[]</code>)</td></tr>
+                <tr><td><code>faq</code></td><td><code>list[str]</code></td><td>✅</td><td>관련 FAQ/Manual 문서 (없으면 <code>[]</code>)</td></tr>
+                <tr><td><code>menu</code></td><td><code>list[dict]</code></td><td>✅</td><td>관련 메뉴 정보 - 랭킹순 (없으면 <code>[]</code>)</td></tr>
+            </tbody>
+        </table>
+
+        <h4>menu 항목 구조</h4>
+        <pre><code>{
+    "rank": int,      # 추천 순위 (1이 가장 높음)
+    "name": str,      # 메뉴 표시명
+    "path": str,      # 메뉴 경로 (계층)
+    "url": str        # 실제 URL
+}</code></pre>
+
+        <table>
+            <thead>
+                <tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th><th>예시</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>rank</code></td><td><code>int</code></td><td>✅</td><td>추천 순위 (1=최우선)</td><td><code>1</code></td></tr>
+                <tr><td><code>name</code></td><td><code>str</code></td><td>✅</td><td>메뉴 표시명</td><td><code>"Cost Analysis"</code></td></tr>
+                <tr><td><code>path</code></td><td><code>str</code></td><td>✅</td><td>메뉴 경로</td><td><code>"/cost/analysis"</code></td></tr>
+                <tr><td><code>url</code></td><td><code>str</code></td><td>✅</td><td>실제 이동 URL</td><td><code>"/cost/cost-analysis/usage"</code></td></tr>
+            </tbody>
+        </table>
+
+        <h4>응답 예시</h4>
+        <pre><code>{
+  "memory": [
+    "이전에 EC2 비용 관련 문의하셨습니다."
+  ],
+  "faq": [
+    "Q: EC2 비용을 줄이려면? A: RI 또는 Savings Plan 적용을 권장합니다.",
+    "Q: 비용 알림 설정은? A: Cost > Alerts 메뉴에서 설정 가능합니다."
+  ],
+  "menu": [
+    {"rank": 1, "name": "Cost Analysis", "path": "/cost/analysis", "url": "/cost/cost-analysis/usage"},
+    {"rank": 2, "name": "RI Management", "path": "/cost/ri", "url": "/cost/ri-management"},
+    {"rank": 3, "name": "Savings Plan", "path": "/cost/sp", "url": "/cost/savings-plan"}
+  ]
+}</code></pre>
+
+        <h4>빈 응답 예시 (해당 소스 없음)</h4>
+        <pre><code>{
+  "memory": [],
+  "faq": [],
+  "menu": []
+}</code></pre>
+
+        <h4>B 계층 처리 규칙</h4>
+        <table>
+            <thead>
+                <tr><th>필드</th><th>빈 배열 시</th><th>값 있을 시</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>memory</code></td><td>Context에서 제외</td><td>Context에 포함</td></tr>
+                <tr><td><code>faq</code></td><td>Context에서 제외</td><td>Context에 포함</td></tr>
+                <tr><td><code>menu</code></td><td>Fallback 메뉴 안내 불가</td><td>MAX_ITERATIONS 시 LLM이 선택</td></tr>
+            </tbody>
+        </table>
+
+        <h4>책임 분리</h4>
+        <table>
+            <thead>
+                <tr><th>B가 하는 것</th><th>B가 안 하는 것 (C 담당)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>search_context(query)</code> 호출</td><td>어떤 소스를 조회할지 판단 (Adaptive)</td></tr>
+                <tr><td>ContextResult 수신</td><td>Memory/FAQ/Menu 실제 조회 로직</td></tr>
+                <tr><td>빈 배열 필터링 후 Context 조립</td><td>RAG 내부 구현</td></tr>
+                <tr><td>MAX_ITERATIONS 시 menu에서 LLM 선택</td><td>menu 랭킹 결정</td></tr>
+            </tbody>
+        </table>
+
+        <div class="section">
+            <h4>PoC Mock 구현 (LLM 기반)</h4>
+            <p>PoC 단계에서 C 계층은 <strong>LLM을 활용한 Mock</strong>으로 구현합니다. 실제 RAG 없이도 테스트 가능합니다.</p>
+
+            <div class="mermaid">
+flowchart LR
+    Query["query"] --> MockC["🤖 Mock C Layer<br/>(LLM)"]
+    MockC --> Result["ContextResult"]
+
+    style MockC fill:#9b59b6,color:#fff
+            </div>
+
+            <table>
+                <thead>
+                    <tr><th>항목</th><th>설명</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>입력</strong></td><td>사용자 query</td></tr>
+                    <tr><td><strong>처리</strong></td><td>LLM이 query를 분석하여 ContextResult 포맷에 맞는 응답 생성</td></tr>
+                    <tr><td><strong>출력</strong></td><td>ContextResult (memory, faq, menu)</td></tr>
+                </tbody>
+            </table>
+
+            <h5>Mock LLM 프롬프트 예시</h5>
+<pre><code>당신은 FinOps 시스템의 RAG 컴포넌트입니다.
+사용자 질문을 분석하여 관련 정보를 ContextResult 형식으로 반환하세요.
+
+질문: "{query}"
+
+다음 JSON 형식으로 응답하세요:
+{
+  "memory": ["관련 대화 히스토리..."],
+  "faq": ["Q: 관련 FAQ A: 답변..."],
+  "menu": [
+    {"rank": 1, "name": "메뉴명", "path": "/경로", "url": "/실제URL"}
+  ]
+}
+
+- FinOps/클라우드 비용 관련 질문에 적절한 FAQ와 메뉴를 생성
+- 관련 없는 필드는 빈 배열 []로 반환</code></pre>
+
+            <table>
+                <thead>
+                    <tr><th>장점</th><th>설명</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>✅ 독립 테스트</td><td>C 계층 구현 없이 B 계층 단독 테스트 가능</td></tr>
+                    <tr><td>✅ 유연한 응답</td><td>다양한 시나리오에 적절한 Mock 데이터 자동 생성</td></tr>
+                    <tr><td>✅ 인터페이스 검증</td><td>실제 연동 전 ContextResult 포맷 검증</td></tr>
+                    <tr><td>✅ 단일 모델</td><td>ReAct Agent와 동일한 gpt-5-nano 사용 (속도+비용)</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3 id="arch-response">2.8 응답 포맷</h3>
+        <p>최종 답변은 아래 구조를 따르며, RAG 재호출 대신 <strong>후속 질문 유도</strong>로 추가 정보 요청을 처리합니다.</p>
+
+        <div class="mermaid">
+flowchart TB
+    subgraph Response["최종 응답 구조"]
+        Answer["📋 Answer (필수)<br/>질문에 대한 직접 답변"]
+        FollowUp["💡 Follow-up Hint (선택)<br/>후속 질문 유도"]
+        MenuLink["🔗 Menu Link (Fallback)<br/>관련 메뉴 안내"]
+    end
+
+    Answer --> FollowUp
+    FollowUp -.-> MenuLink
+
+    style Answer fill:#00d9ff,color:#000
+    style FollowUp fill:#27ae60,color:#fff
+    style MenuLink fill:#f39c12,color:#000
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>구성 요소</th><th>필수</th><th>설명</th><th>예시</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>📋 Answer</strong></td>
+                    <td>✅</td>
+                    <td>질문에 대한 직접 답변</td>
+                    <td>"EC2 비용이 25% 증가했습니다. RI 적용으로 30% 절감 가능합니다."</td>
+                </tr>
+                <tr>
+                    <td><strong>💡 Follow-up Hint</strong></td>
+                    <td>선택</td>
+                    <td>추가 정보가 필요할 수 있는 경우 후속 질문 유도</td>
+                    <td>"다른 서비스 비용도 궁금하시면 말씀해주세요."</td>
+                </tr>
+                <tr>
+                    <td><strong>🔗 Menu Link</strong></td>
+                    <td>Fallback</td>
+                    <td>처리 불가 시 관련 메뉴 안내</td>
+                    <td>"상세 분석은 Cost Analysis 메뉴에서 확인하세요. → /cost/analysis"</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>응답 샘플</h4>
+
+        <div class="section">
+            <h5>✅ 정상 응답 (Answer + Follow-up)</h5>
+<pre><code>EC2 비용이 전월 대비 25% 증가했습니다.
+
+📊 주요 원인:
+• RI 미적용 인스턴스 3대 추가
+• m5.xlarge → m5.2xlarge 업그레이드 2건
+
+💡 RI 적용 시 약 30% 절감이 가능합니다.
+
+---
+다른 서비스 비용이나 상세 분석이 필요하시면 말씀해주세요.</code></pre>
+        </div>
+
+        <div class="section">
+            <h5>⚠️ 부분 응답 (Answer + Menu Link)</h5>
+<pre><code>현재 화면에서 EC2 비용 $15,000을 확인했습니다.
+
+상세 비용 추이와 최적화 방안은 아래 메뉴에서 확인하실 수 있습니다.
+
+🔗 RI Management → /cost/ri-management
+🔗 Savings Plan → /cost/savings-plan</code></pre>
+        </div>
+
+        <div class="section">
+            <h5>❌ Fallback 응답 (MAX_ITERATIONS 도달)</h5>
+<pre><code>요청하신 내용을 완전히 파악하기 어렵습니다.
+
+아래 메뉴에서 직접 확인해보시겠어요?
+
+🔗 Cost Analysis → /cost/cost-analysis/usage
+
+---
+💡 더 구체적인 질문으로 다시 시도해보세요.
+   예: "이번 달 EC2 비용이 왜 증가했어?"</code></pre>
+        </div>
+
+        <div class="section">
+            <h5>⏱️ 타임아웃 응답 (ask_human 2분 초과)</h5>
+<pre><code>응답을 기다렸지만 확인이 없어 작업을 진행하지 않았습니다.
+
+준비되시면 다시 말씀해주세요.
+
+🔗 관련 메뉴: Cost Analysis → /cost/cost-analysis/usage</code></pre>
+        </div>
+
+        <div class="section">
+            <h4>설계 결정: RAG 재호출 vs 후속 질문 유도</h4>
+            <table>
+                <thead>
+                    <tr><th>접근 방식</th><th>설명</th><th>채택</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Loop 내 RAG 재호출</td>
+                        <td>ReAct Loop 중 추가 컨텍스트 필요 시 C 계층 재호출</td>
+                        <td>❌</td>
+                    </tr>
+                    <tr>
+                        <td><strong>후속 질문 유도</strong></td>
+                        <td>응답 끝에 추가 질문 안내 → 다음 턴에서 새 RAG 조회</td>
+                        <td>✅</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p><strong>이유:</strong> 단순함 유지, 자연스러운 대화 흐름, 매 턴 fresh 컨텍스트</p>
+        </div>
+
+        <hr>
+
+        <!-- 3. 폴더 구조 -->
+        <h2 id="folder">3. 폴더 구조</h2>
+
+        <div class="mermaid">
+graph TB
+    subgraph "poc/b_ai_engine/"
+        design["📁 design/"]
+        docs["📁 docs/"]
+        mock["📁 mock/"]
+        poc3a["📁 poc_3a_dspy_research/ ✅"]
+        src["📁 src/"]
+    end
+
+    subgraph "src/"
+        config["⚙️ config.py"]
+        main["🚀 main.py"]
+        agent["🤖 agent.py"]
+        tools["📁 tools/"]
+        callback["📁 callback/"]
+    end
+
+    agent --> sig["Signature 인라인 정의"]
+    agent --> react["dspy.ReAct 구현"]
+
+    tools --> ask["ask_human.py"]
+    tools --> req["request_api.py"]
+
+    callback --> iface["interface.py"]
+    callback --> mockcb["mock.py"]
+
+    src --> config
+    src --> main
+    src --> agent
+    src --> tools
+    src --> callback
+
+    style design fill:#0f3460
+    style docs fill:#0f3460
+    style mock fill:#0f3460
+    style poc3a fill:#2d5016
+    style src fill:#0f3460
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>요소</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>design/</code></td><td>설계 문서 (본 문서 포함)</td></tr>
+                <tr><td><code>docs/</code></td><td>참고 문서 (ReAct 패턴, DSPy 분석)</td></tr>
+                <tr><td><code>mock/</code></td><td>Mock 데이터 (DOM, RAG)</td></tr>
+                <tr><td><code>poc_3a_dspy_research/</code></td><td>DSPy 리서치 결과 (완료, 참고용)</td></tr>
+                <tr><td><code>src/</code></td><td>실제 구현 코드</td></tr>
+            </tbody>
+        </table>
+
+        <h4>src/ 상세</h4>
+        <table>
+            <thead>
+                <tr><th>파일/폴더</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>config.py</code></td><td>모델명 (gpt-5-nano), 상수, 환경변수</td></tr>
+                <tr><td><code>main.py</code></td><td>CLI 테스트 진입점</td></tr>
+                <tr><td><code>agent.py</code></td><td>ReAct Agent + Signature 인라인 정의</td></tr>
+                <tr><td><code>tools/</code></td><td>ask_human, request_api 도구 (일반 Python 함수)</td></tr>
+                <tr><td><code>callback/</code></td><td>Callback Manager (interface + mock 구현체)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="section">
+            <h4>설계 결정: Signature 인라인 정의</h4>
+            <p><code>dspy.ReAct</code> 사용 시 Signature를 별도 파일로 분리할 필요 없음. Agent 파일에 인라인 정의.</p>
+<pre><code># agent.py
+class FinOpsQuestion(dspy.Signature):
+    """FinOps 비용 관련 질문에 답변"""
+    question: str = dspy.InputField(desc="사용자 질문")
+    context: str = dspy.InputField(desc="화면 DOM + RAG 결과")
+    answer: str = dspy.OutputField(desc="분석 답변")
+
+# ReAct Agent 생성
+agent = dspy.ReAct(
+    FinOpsQuestion,
+    tools=[ask_human, request_api],
+    max_iters=5
+)</code></pre>
+        </div>
+
+        <hr>
+
+        <!-- 4. ReAct Loop -->
+        <h2 id="react">4. ReAct Loop 설계</h2>
+
+        <h3>4.1 ReAct 패턴 개요</h3>
+
+        <div class="mermaid">
+flowchart LR
+    Q[/"사용자 질문"/] --> R["🧠 Reason<br/>(생각)"]
+    R --> A["⚡ Act<br/>(행동)"]
+    A --> O["👁️ Observe<br/>(관찰)"]
+    O -->|"반복 (max 5회)"| R
+    A -->|"finish"| F[/"최종 답변"/]
+
+    style Q fill:#e94560,color:#fff
+    style R fill:#0f3460
+    style A fill:#0f3460
+    style O fill:#0f3460
+    style F fill:#00d9ff,color:#000
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>요소</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>🧠 <strong>Reason</strong></td><td>현재 상황을 분석하고 다음 행동을 결정 (LLM 추론)</td></tr>
+                <tr><td>⚡ <strong>Act</strong></td><td>도구 호출 또는 <code>finish</code> 선택</td></tr>
+                <tr><td>👁️ <strong>Observe</strong></td><td>도구 실행 결과를 관찰하고 컨텍스트에 추가</td></tr>
+                <tr><td><strong>반복</strong></td><td>최대 5회까지 Reason → Act → Observe 반복</td></tr>
+                <tr><td><strong>finish</strong></td><td>최종 답변 생성 후 루프 종료</td></tr>
+            </tbody>
+        </table>
+
+        <h3 id="reason-output">4.2 Reason 출력 구조</h3>
+        <p>Reason 단계에서 LLM이 생성하는 출력 구조입니다. <code>finish</code> 선택 시 Answer도 함께 생성됩니다.</p>
+
+        <table>
+            <thead>
+                <tr><th>필드</th><th>필수</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Thought</strong></td><td>✅</td><td>현재 상황 분석 및 판단 근거</td></tr>
+                <tr><td><strong>Action</strong></td><td>✅</td><td>다음 행동: <code>ask_human</code>, <code>request_api</code>, <code>finish</code></td></tr>
+                <tr><td><strong>Action Input</strong></td><td>도구 시</td><td>도구 호출 시 전달할 파라미터</td></tr>
+                <tr><td><strong>Answer</strong></td><td>finish 시</td><td>최종 답변 (finish 선택 시에만)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="section">
+            <h4>예시: 도구 호출</h4>
+<pre><code>Thought: 사용자가 비용 절감을 원하지만 어떤 서비스인지 불명확함
+Action: ask_human
+Action Input: "어떤 서비스의 비용을 줄일까요? (예: EC2, Lambda, S3)"</code></pre>
+
+            <h4>예시: 최종 답변 (finish)</h4>
+<pre><code>Thought: EC2 비용 25% 증가 원인 파악됨. RI 미적용이 주 원인. 답변 가능.
+Action: finish
+Answer: EC2 비용이 전월 대비 25% 증가했습니다.
+        주요 원인은 RI 미적용 인스턴스 증가입니다.
+        RI 적용 시 약 30% 절감이 가능합니다.
+
+        💡 다른 서비스 비용도 궁금하시면 말씀해주세요.</code></pre>
+        </div>
+
+        <div class="section">
+            <p><strong>종료 조건:</strong></p>
+            <ul>
+                <li><code>finish</code> 액션 선택</li>
+                <li>MAX_ITERATIONS (5회) 도달</li>
+            </ul>
+        </div>
+
+        <hr>
+
+        <!-- 5. Human Feedback Tool -->
+        <h2 id="human-feedback">5. Human Feedback Tool 설계</h2>
+
+        <h3>5.1 목적</h3>
+        <p>AI가 불확실하거나 확인이 필요한 경우 사용자에게 되물음</p>
+
+        <h3>5.2 사용 시나리오</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>상황</th>
+                    <th>예시</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>모호한 질문</td>
+                    <td>"비용 줄여줘" → "어떤 서비스의 비용을 줄일까요?"</td>
+                </tr>
+                <tr>
+                    <td>위험한 작업</td>
+                    <td>"삭제해줘" → "정말 삭제할까요? (되돌릴 수 없음)"</td>
+                </tr>
+                <tr>
+                    <td>선택 필요</td>
+                    <td>"최적화해줘" → "RI vs Savings Plan 중 선택해주세요"</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>5.3 Human Feedback 흐름</h3>
+        <div class="mermaid">
+sequenceDiagram
+    participant Agent as ReAct Agent
+    participant Tool as ask_human Tool
+    participant WS as WebSocket
+    participant Client as Client (User)
+
+    Agent->>Tool: ask_human("어떤 서비스?")
+    Tool->>WS: clarification_request
+    WS->>Client: 질문 표시
+
+    Note over Client: 사용자 입력 대기<br/>(timeout: 2분)
+
+    Client->>WS: "EC2요"
+    WS->>Tool: 응답 전달
+    Tool->>Agent: Observation: "EC2요"
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>요소</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>ReAct Agent</strong></td><td>추론 엔진, 도구 호출 결정</td></tr>
+                <tr><td><strong>ask_human Tool</strong></td><td>사용자 질문 생성 및 응답 대기</td></tr>
+                <tr><td><strong>WebSocket</strong></td><td>서버-클라이언트 양방향 통신 채널</td></tr>
+                <tr><td><strong>Client (User)</strong></td><td>실제 사용자, 질문에 응답</td></tr>
+                <tr><td><strong>clarification_request</strong></td><td>되물음 요청 메시지 타입</td></tr>
+                <tr><td><strong>timeout: 2분</strong></td><td>사용자 응답 대기 최대 시간</td></tr>
+            </tbody>
+        </table>
+
+        <p><strong>위험도 기반 자동 트리거:</strong> <a href="#arch-risk">2.3 위험도 기반 Human Feedback 트리거</a> 참조</p>
+
+        <hr>
+
+        <!-- 6. API Request Tool -->
+        <h2 id="api-request">6. API Request Tool 설계</h2>
+
+        <h3>6.1 목적</h3>
+        <p>AI가 추가 데이터가 필요할 때 클라이언트에 자연어로 요청</p>
+
+        <h3>6.2 동작 흐름</h3>
+        <div class="mermaid">
+sequenceDiagram
+    participant LLM
+    participant Server
+    participant Client
+
+    LLM->>Server: "이번달 비용 데이터 필요"
+    Server->>Client: request_api(query)
+
+    Note over Client: API 호출<br/>GET /api/costs
+
+    Client->>Server: 응답 데이터 (JSON)
+    Server->>LLM: Observation
+
+    Note over LLM: 데이터 분석 후<br/>답변 생성
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>요소</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>LLM</strong></td><td>데이터 필요성 판단, 자연어 쿼리 생성</td></tr>
+                <tr><td><strong>Server</strong></td><td>request_api 도구 실행, 요청 중계</td></tr>
+                <tr><td><strong>Client</strong></td><td>자연어 쿼리 → 실제 API 호출 매핑</td></tr>
+                <tr><td><strong>data_request</strong></td><td>데이터 요청 메시지 타입</td></tr>
+                <tr><td><strong>timeout: 60초</strong></td><td>API 응답 대기 최대 시간 (클라이언트 API 호출 포함)</td></tr>
+            </tbody>
+        </table>
+
+        <h3>6.3 응답 후처리 (ProgramOfThought)</h3>
+        <p>API 응답이 대용량(수 MB)일 경우, <strong>DSPy ProgramOfThought</strong>로 핵심 데이터만 추출하여 컨텍스트에 포함합니다.</p>
+
+        <h4>문제점</h4>
+        <table>
+            <thead>
+                <tr><th>문제</th><th>영향</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>대용량 JSON 응답</td><td>토큰 비용 폭발, 컨텍스트 한계 초과</td></tr>
+                <tr><td>불필요한 데이터</td><td>LLM 추론 품질 저하</td></tr>
+            </tbody>
+        </table>
+
+        <h4>해결: ProgramOfThought 후처리</h4>
+        <div class="mermaid">
+flowchart LR
+    subgraph "API 응답 후처리"
+        Raw["📦 API 응답<br/>(대용량 JSON)"]
+        Check{"크기 체크<br/>> 500 토큰?"}
+        PoT["🤖 ProgramOfThought<br/>Python 코드 생성 → 실행"]
+        Summary["📋 핵심 데이터<br/>(~500 토큰)"]
+    end
+
+    Raw --> Check
+    Check -->|"작음"| Summary
+    Check -->|"큼"| PoT
+    PoT --> Summary
+    Summary --> CTX["ReAct Context"]
+
+    style Raw fill:#e74c3c,color:#fff
+    style PoT fill:#9b59b6,color:#fff
+    style Summary fill:#27ae60,color:#fff
+        </div>
+
+        <h4>ProgramOfThought vs Predict 비교</h4>
+        <table>
+            <thead>
+                <tr><th>비교 항목</th><th>Predict (LLM 요약)</th><th>ProgramOfThought</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>정확도</strong></td><td>할루시네이션 가능</td><td>코드 실행이라 정확</td></tr>
+                <tr><td><strong>숫자 처리</strong></td><td>약함 (계산 오류)</td><td>강함 (Python 계산)</td></tr>
+                <tr><td><strong>대용량 처리</strong></td><td>토큰 제한</td><td>JSON 파싱으로 처리 가능</td></tr>
+                <tr><td><strong>비용</strong></td><td>입력 토큰 비용 높음</td><td>코드만 생성 (저렴)</td></tr>
+            </tbody>
+        </table>
+
+        <h4>구현 예시</h4>
+<pre><code>class DataExtractor(dspy.Signature):
+    """대용량 API 응답에서 핵심 데이터 추출"""
+    query: str = dspy.InputField(desc="사용자 질문")
+    data_schema: str = dspy.InputField(desc="데이터 구조 설명")
+    code: str = dspy.OutputField(desc="Python 추출 코드")
+
+MAX_CONTEXT_TOKENS = 500
+
+def process_api_response(raw_response: dict, query: str) -> str:
+    # 1. 크기 체크
+    response_str = json.dumps(raw_response, ensure_ascii=False)
+    if estimate_tokens(response_str) <= MAX_CONTEXT_TOKENS:
+        return response_str
+
+    # 2. 크면 ProgramOfThought로 추출
+    extractor = dspy.ProgramOfThought(DataExtractor)
+    result = extractor(
+        query=query,
+        data_schema=describe_schema(raw_response)
+    )
+
+    # 3. 생성된 코드 실행
+    extracted = exec_safe(result.code, {"data": raw_response})
+    return json.dumps(extracted, ensure_ascii=False)</code></pre>
+
+        <div class="section">
+            <h4>왜 클라이언트가 아닌 서버 후처리인가?</h4>
+            <table>
+                <thead>
+                    <tr><th>클라이언트 전처리</th><th>서버 후처리 ✅</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>데이터 타입별 표준화 필요</td><td>LLM이 유연하게 처리</td></tr>
+                    <tr><td>클라이언트마다 구현 부담</td><td>중앙 집중 관리</td></tr>
+                    <tr><td>유지보수 분산</td><td>서버만 수정</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <hr>
+
+        <!-- 7. 테스트 시나리오 -->
+        <h2 id="test">7. 테스트 시나리오</h2>
+
+        <h3>7.1 ReAct Loop 기본 동작</h3>
+        <div class="mermaid">
+sequenceDiagram
+    participant User
+    participant Agent
+
+    User->>Agent: "EC2란 무엇인가요?"
+    Note over Agent: Thought: 일반 지식 질문<br/>Action: finish
+    Agent->>User: "EC2는 AWS의 가상 서버..."
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>단계</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>입력</strong></td><td>단순 지식 질문 (도구 불필요)</td></tr>
+                <tr><td><strong>추론</strong></td><td>1 step만에 finish 결정</td></tr>
+                <tr><td><strong>출력</strong></td><td>LLM 지식으로 직접 답변</td></tr>
+            </tbody>
+        </table>
+
+        <h3>7.2 Human Feedback 연동</h3>
+        <div class="mermaid">
+sequenceDiagram
+    participant User
+    participant Agent
+    participant Tool as ask_human
+
+    User->>Agent: "비용 줄여줘"
+    Note over Agent: Thought: 어떤 서비스인지 불명확
+    Agent->>Tool: ask_human("어떤 서비스?")
+    Tool->>User: "어떤 서비스의 비용을 줄일까요?"
+    User->>Tool: "EC2요"
+    Tool->>Agent: Observation: "EC2요"
+    Note over Agent: Thought: EC2 비용 최적화 방안 제시<br/>Action: finish
+    Agent->>User: "EC2 비용 최적화 방안..."
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>단계</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Step 1</strong></td><td>모호한 질문 감지 → ask_human 호출</td></tr>
+                <tr><td><strong>사용자 응답</strong></td><td>"EC2요" 입력</td></tr>
+                <tr><td><strong>Step 2</strong></td><td>명확해진 요청으로 finish</td></tr>
+                <tr><td><strong>총 2 steps</strong></td><td>Human Feedback으로 질문 명확화</td></tr>
+            </tbody>
+        </table>
+
+        <h3>7.3 API Request 연동</h3>
+        <div class="mermaid">
+sequenceDiagram
+    participant User
+    participant Agent
+    participant Tool as request_api
+    participant API
+
+    User->>Agent: "이번달 EC2 비용이 왜 증가했어?"
+    Note over Agent: Thought: 비용 데이터 필요
+    Agent->>Tool: request_api("이번달 EC2 비용")
+    Tool->>API: GET /api/costs
+    API->>Tool: {"nov": 10000, "dec": 15000}
+    Tool->>Agent: Observation: 비용 데이터
+    Note over Agent: Thought: 50% 증가, 원인 분석<br/>Action: finish
+    Agent->>User: "EC2 비용이 50% 증가했습니다..."
+        </div>
+
+        <table>
+            <thead>
+                <tr><th>단계</th><th>설명</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Step 1</strong></td><td>비용 데이터 필요 판단 → request_api 호출</td></tr>
+                <tr><td><strong>API 응답</strong></td><td>{"nov": 10000, "dec": 15000}</td></tr>
+                <tr><td><strong>Step 2</strong></td><td>데이터 분석 후 finish</td></tr>
+                <tr><td><strong>총 2 steps</strong></td><td>API 데이터 기반 분석 답변</td></tr>
+            </tbody>
+        </table>
+
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#0f3460',
+                primaryTextColor: '#eaeaea',
+                primaryBorderColor: '#30363d',
+                lineColor: '#00d9ff',
+                secondaryColor: '#16213e',
+                tertiaryColor: '#1a1a2e'
+            }
+        });
+
+        // 모든 Mermaid 다이어그램 노드 폭 확장
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                const diagrams = document.querySelectorAll('.mermaid svg');
+                diagrams.forEach(diagram => {
+                    const foreignObjects = diagram.querySelectorAll('foreignObject');
+                    foreignObjects.forEach(fo => {
+                        const currentWidth = parseInt(fo.getAttribute('width')) || 150;
+                        fo.setAttribute('width', Math.max(currentWidth * 1.5, 250));
+                    });
+                });
+            }, 500);
+        });
+    </script>
+</body>
+</html>
