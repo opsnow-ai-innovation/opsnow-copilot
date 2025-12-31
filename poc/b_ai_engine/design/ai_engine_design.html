@@ -430,7 +430,7 @@ flowchart TB
                 <tr><td><strong>⑧</strong></td><td>도구 → Callback</td><td>ask_human: input() 대기 / request_api: 2초 후 Mock 데이터</td></tr>
                 <tr><td><strong>⑨</strong></td><td>Client 통신</td><td>Mock(터미널) 또는 Real(WebSocket) 통신</td></tr>
                 <tr style="background: rgba(142, 68, 173, 0.2);"><td><strong>⑩</strong></td><td>응답 분기</td><td>ask_human → 직접 Observe / request_api → 후처리 분기</td></tr>
-                <tr style="background: rgba(142, 68, 173, 0.2);"><td><strong>⑪</strong></td><td>ProgramOfThought 후처리</td><td>대용량 API 응답 시 핵심 데이터만 추출 (Python 코드 생성→실행)</td></tr>
+                <tr style="background: rgba(142, 68, 173, 0.2);"><td><strong>⑪</strong></td><td>ProgramOfThought 후처리</td><td>대용량 API 응답 시 핵심 데이터만 추출 (스키마 기반 코드 생성→실행)</td></tr>
                 <tr><td><strong>⑫</strong></td><td>컨텍스트 누적</td><td>결과를 Context에 추가 → ⑤로 반복 (max 5회)</td></tr>
             </tbody>
         </table>
@@ -1274,7 +1274,12 @@ sequenceDiagram
         </table>
 
         <h3>6.3 응답 후처리 (ProgramOfThought)</h3>
-        <p>API 응답이 대용량(수 MB)일 경우, <strong>DSPy ProgramOfThought</strong>로 핵심 데이터만 추출하여 컨텍스트에 포함합니다.</p>
+        <p>API 응답이 대용량(수 MB)일 경우, <strong>ProgramOfThought 패턴</strong>으로 핵심 데이터만 추출합니다.</p>
+        <p>LLM이 데이터를 직접 처리하는 대신, <strong>코드를 생성</strong>하여 데이터를 처리하는 접근 방식입니다.</p>
+
+        <div class="section">
+            <strong>📄 상세 설계:</strong> <a href="api_response_postprocessing.html">API 응답 후처리 설계 문서</a>
+        </div>
 
         <h4>문제점</h4>
         <table>
