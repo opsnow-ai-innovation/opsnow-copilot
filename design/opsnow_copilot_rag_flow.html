@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpsNow Copilot - Unified Context Flow</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #00d4ff;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .section-title {
+            color: #00d4ff;
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section-title .num {
+            background: #00d4ff;
+            color: #1a1a2e;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+        }
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .card-title {
+            color: #ffd700;
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+        }
+        .card ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .card li {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .card li:last-child {
+            border-bottom: none;
+        }
+        .card li::before {
+            content: "→";
+            color: #00d4ff;
+        }
+        .highlight {
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        .tag {
+            display: inline-block;
+            background: rgba(0, 212, 255, 0.2);
+            color: #00d4ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin: 2px;
+        }
+        .tag.yellow {
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+        }
+        .tag.green {
+            background: rgba(0, 255, 128, 0.2);
+            color: #00ff80;
+        }
+        .tag.red {
+            background: rgba(255, 100, 100, 0.2);
+            color: #ff6464;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        th {
+            color: #00d4ff;
+            font-weight: 600;
+        }
+        .cost {
+            color: #00ff80;
+            font-weight: bold;
+        }
+        .flow-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .flow-step .step-num {
+            background: #00d4ff;
+            color: #1a1a2e;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        .redis-key {
+            font-family: monospace;
+            background: rgba(255, 215, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #ffd700;
+        }
+        .json-block {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            white-space: pre;
+            color: #b0b0b0;
+        }
+        .json-key { color: #00d4ff; }
+        .json-string { color: #98c379; }
+        .json-number { color: #d19a66; }
+        .formula {
+            background: rgba(0, 212, 255, 0.1);
+            border-left: 4px solid #00d4ff;
+            padding: 16px;
+            border-radius: 0 8px 8px 0;
+            font-family: monospace;
+            font-size: 1.1rem;
+            margin: 16px 0;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            margin-top: 40px;
+            padding: 20px;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>OpsNow Copilot - Unified Context Flow</h1>
+        <p class="subtitle">Recursive Summarization + Agentic RAG 통합 아키텍처 (v0.4)</p>
+
+        <!-- 1. 전체 아키텍처 -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">1</span> 전체 아키텍처</h2>
+            <div class="mermaid">
+flowchart TB
+    subgraph Input["입력"]
+        Q["사용자 질문<br/>'EC2 비용 줄이는 방법?'"]
+    end
+
+    subgraph Parallel["병렬 실행"]
+        Q --> MEM["Long-term Memory<br/>(히스토리)"]
+        Q --> RAG["Agentic RAG<br/>(FAQ/Guide)"]
+    end
+
+    subgraph Memory["Long-term Memory (Redis Only)"]
+        MEM --> SHORT["단기기억<br/>최근 5턴 원본"]
+        MEM --> RSUM["Long-term Memory<br/>전체 맥락 ~500토큰"]
+        MEM --> ENT["Entities<br/>구조화 정보"]
+    end
+
+    subgraph RAGFlow["Agentic RAG (FAISS)"]
+        RAG --> SEARCH["search_all<br/>FAQ 3 + Guide 7"]
+        SEARCH --> RERANK["Rerank + 충분성"]
+        RERANK -->|부족| RETRY["재검색/섹션확장"]
+        RETRY --> RERANK
+        RERANK -->|충분| RAGRES["RAG 결과"]
+    end
+
+    subgraph Merge["결과 병합"]
+        SHORT --> CTX["Context Builder"]
+        RSUM --> CTX
+        ENT --> CTX
+        RAGRES --> CTX
+    end
+
+    subgraph Fallback["Fallback"]
+        CTX --> CHK{"confidence<br/>< 0.5?"}
+        CHK -->|Yes| MENU["메뉴 검색<br/>(인메모리)"]
+        MENU --> FB["Fallback 응답"]
+        CHK -->|No| GEN["응답 생성"]
+    end
+
+    subgraph Output["출력"]
+        FB --> RESP["최종 응답"]
+        GEN --> RESP
+    end
+
+    subgraph Post["후처리 (비동기)"]
+        RESP -.-> SAVE["턴 저장"]
+        SAVE -.-> OVF{"단기 > 5턴?"}
+        OVF -.->|Yes| UPDATE["Memory Update<br/>Mi = LLM(Mi-1, Si)"]
+    end
+
+    style Q fill:#00d4ff,color:#000
+    style RESP fill:#00ff80,color:#000
+    style UPDATE fill:#ffd700,color:#000
+    style MENU fill:#ff9800,color:#000
+            </div>
+        </div>
+
+        <!-- 2. Long-term Memory -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">2</span> Long-term Memory - Recursive Summarization</h2>
+
+            <div class="formula">
+                Mi = LLM(Mi-1, Si) → 메모리는 로그가 아니라 <strong>상태(State)</strong>다
+            </div>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h3 class="card-title">Read Flow (검색 없음)</h3>
+                    <div class="flow-step">
+                        <span class="step-num">1</span>
+                        <span>Redis에서 <span class="highlight">전체 메모리</span> 조회</span>
+                    </div>
+                    <div class="flow-step">
+                        <span class="step-num">2</span>
+                        <span>단기기억 + Long-term Memory + Entities 반환</span>
+                    </div>
+                    <div class="flow-step">
+                        <span class="step-num">3</span>
+                        <span><span class="highlight">검색/매칭 없음</span> → noise 제거</span>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Write Flow (Memory Update)</h3>
+                    <div class="flow-step">
+                        <span class="step-num">1</span>
+                        <span>단기 > 5턴 → 5턴 추출</span>
+                    </div>
+                    <div class="flow-step">
+                        <span class="step-num">2</span>
+                        <span><span class="highlight">이전 메모리 + 새 대화</span> → LLM</span>
+                    </div>
+                    <div class="flow-step">
+                        <span class="step-num">3</span>
+                        <span>새 메모리로 <span class="highlight">덮어쓰기</span></span>
+                    </div>
+                    <div class="flow-step">
+                        <span class="step-num">4</span>
+                        <span>Entities 병합</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mermaid" style="margin-top: 20px;">
+flowchart LR
+    subgraph Read["Read (검색 없음)"]
+        Q1["질문"] --> GET["Redis 조회"]
+        GET --> S["단기 5턴"]
+        GET --> M["Long-term Memory"]
+        GET --> E["Entities"]
+    end
+
+    subgraph Write["Write (Memory Update)"]
+        TURNS["5턴 대화"] --> COMBINE["이전 메모리 +<br/>새 대화"]
+        COMBINE --> LLM["LLM 재요약"]
+        LLM --> OVERWRITE["덮어쓰기"]
+    end
+
+    style GET fill:#00d4ff,color:#000
+    style LLM fill:#ffd700,color:#000
+    style OVERWRITE fill:#00ff80,color:#000
+            </div>
+
+            <!-- 시나리오 예시 -->
+            <div class="card" style="margin-top: 20px;">
+                <h3 class="card-title">시나리오 예시: 암묵적 참조 처리</h3>
+                <div class="mermaid">
+sequenceDiagram
+    participant U as 사용자
+    participant C as Copilot
+    participant M as Long-term Memory
+
+    Note over U,M: 턴 1-5 (단기기억)
+    U->>C: "11월 AWS 비용 분석해줘"
+    C->>U: "11월 총 비용 $12,500. EC2 65%..."
+
+    Note over U,M: 턴 6에서 Memory Update 발생
+    C->>M: Mi = LLM(Mi-1, "11월 AWS 분석...")
+    M-->>M: "사용자가 11월 AWS 비용 분석 요청.<br/>총 $12,500, EC2가 65% 차지"
+
+    Note over U,M: 턴 10 (단기기억 밖)
+    U->>C: "1월은?"
+
+    Note over C: 키워드 "1월" ≠ "11월"<br/>But 전체 맥락에서 유추 가능
+    C->>M: 전체 메모리 조회 (검색 X)
+    M-->>C: "사용자가 11월 AWS 비용 분석..."
+    C->>U: "1월 AWS 총 비용은 $11,200..."
+                </div>
+                <div class="grid-2" style="margin-top: 16px;">
+                    <div class="card" style="background: rgba(255, 100, 100, 0.1); border: 1px solid rgba(255, 100, 100, 0.3);">
+                        <h4 style="color: #ff6464; margin-bottom: 8px;">❌ Fact 검색 방식</h4>
+                        <p style="font-size: 0.9rem;">"1월" 키워드로 검색 → "11월" fact 못 찾음</p>
+                        <p style="font-size: 0.85rem; color: #888; margin-top: 8px;">키워드 불일치 = 검색 실패</p>
+                    </div>
+                    <div class="card" style="background: rgba(0, 255, 128, 0.1); border: 1px solid rgba(0, 255, 128, 0.3);">
+                        <h4 style="color: #00ff80; margin-bottom: 8px;">✅ Recursive Summarization</h4>
+                        <p style="font-size: 0.9rem;">전체 맥락에서 LLM이 "11월처럼 1월도" 유추</p>
+                        <p style="font-size: 0.85rem; color: #888; margin-top: 8px;">검색 없음 = 맥락 손실 없음</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 메모리 보정: 프롬프트 튜닝 -->
+            <div class="card" style="margin-top: 20px;">
+                <h3 class="card-title">메모리 보정: Recency 우선 프롬프트</h3>
+                <p style="margin-bottom: 12px; color: #aaa;">오래된 정보가 계속 쌓이는 문제 → 요약 시 프롬프트로 보정 (Memory + Entities 동시 정리)</p>
+                <div class="json-block" style="font-size: 0.8rem;">
+<span style="color: #ff6464;"># Memory Update Prompt</span>
+
+당신은 대화 요약 전문가입니다.
+
+<span style="color: #ffd700;">## 입력</span>
+- 이전 메모리: {previous_memory}
+- 이전 Entities: {previous_entities}
+- 새 대화 (5턴): {new_dialogue}
+
+<span style="color: #ffd700;">## Long-term Memory 규칙</span>
+1. <span style="color: #00ff80;">최근 대화 우선</span>: 새 대화 내용이 더 중요
+2. <span style="color: #00ff80;">주제 전환 감지</span>: 주제가 바뀌면 이전 주제는 한 줄로 압축
+3. <span style="color: #00ff80;">오래된 정보 정리</span>: 더 이상 관련 없는 내용은 과감히 삭제
+
+<span style="color: #ffd700;">## Entities 규칙</span>
+1. <span style="color: #00ff80;">같은 키는 덮어쓰기</span>: 값이 바뀌면 최신 값으로
+2. <span style="color: #00ff80;">최대 25개 제한 (FIFO)</span>: 초과 시 오래된 것부터 삭제
+3. <span style="color: #00ff80;">주제 바뀌어도 유지</span>: 자연스럽게 밀려날 때까지 보존
+
+<span style="color: #ffd700;">## 출력</span>
+- 새 메모리 (최대 20문장)
+- 새 Entities (최대 25개, FIFO)
+                </div>
+                <div class="grid-2" style="margin-top: 16px;">
+                    <div class="card" style="background: rgba(0, 0, 0, 0.2);">
+                        <h4 style="color: #ffd700; margin-bottom: 8px;">예시: 주제 전환 시 Memory</h4>
+                        <p style="font-size: 0.85rem; color: #aaa;">Before:</p>
+                        <p style="font-size: 0.85rem;">"11월 AWS 비용 $12,500 분석함. EC2가 65%..."</p>
+                        <p style="font-size: 0.85rem; color: #aaa; margin-top: 8px;">After (주제 바뀜):</p>
+                        <p style="font-size: 0.85rem;">"이전에 11월 비용 분석함. <span style="color: #00ff80;">현재는 사용자 권한 설정 중</span>..."</p>
+                    </div>
+                    <div class="card" style="background: rgba(0, 0, 0, 0.2);">
+                        <h4 style="color: #ffd700; margin-bottom: 8px;">예시: Entities FIFO</h4>
+                        <p style="font-size: 0.85rem; color: #aaa;">배열 + 턴 번호로 순서 관리:</p>
+                        <div class="json-block" style="font-size: 0.7rem; margin-top: 4px;">[{<span class="json-key">"key"</span>:<span class="json-string">"nov_cost"</span>, <span class="json-key">"turn"</span>:<span class="json-number">3</span>}, {<span class="json-key">"key"</span>:<span class="json-string">"topic"</span>, <span class="json-key">"turn"</span>:<span class="json-number">10</span>}, ...]</div>
+                        <p style="font-size: 0.85rem; color: #aaa; margin-top: 8px;">25개 초과 시 앞에서 shift:</p>
+                        <div class="json-block" style="font-size: 0.7rem; margin-top: 4px;">[{<span class="json-key">"key"</span>:<span class="json-string">"topic"</span>, <span class="json-key">"turn"</span>:<span class="json-number">10</span>}, ...새것들...]</div>
+                        <p style="font-size: 0.85rem; color: #00ff80; margin-top: 8px;">→ turn:3인 nov_cost 자연스럽게 탈락</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Redis 저장 구조 -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">3</span> Redis 저장 구조</h2>
+            <div class="grid-3">
+                <div class="card">
+                    <h3 class="card-title">단기기억</h3>
+                    <p style="margin-bottom: 8px; color: #00d4ff; font-size: 0.9rem;">📌 용도: "아까 그거" 정확히 찾기</p>
+                    <p style="margin-bottom: 8px; font-size: 0.85rem; color: #aaa;">최근 5턴 원본 그대로 저장. 수정/요약 없이 그대로 LLM에 전달</p>
+                    <p style="margin-bottom: 12px;">Key: <span class="redis-key">chat:{tenant}:{session}:short</span></p>
+                    <div class="json-block" style="font-size: 0.75rem;">[
+  {
+    <span class="json-key">"turn"</span>: <span class="json-number">6</span>,
+    <span class="json-key">"user"</span>: <span class="json-string">"11월 AWS 비용?"</span>,
+    <span class="json-key">"assistant"</span>: <span class="json-string">"$12,500"</span>
+  }
+]</div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Long-term Memory</h3>
+                    <p style="margin-bottom: 8px; color: #00d4ff; font-size: 0.9rem;">📌 용도: 전체 대화 맥락 유지</p>
+                    <p style="margin-bottom: 8px; font-size: 0.85rem; color: #aaa;">5턴 넘어간 대화를 요약해서 저장. "뭐하던 중이었지?" 파악용</p>
+                    <p style="margin-bottom: 12px;">Key: <span class="redis-key">chat:{tenant}:{session}:memory</span></p>
+                    <div class="json-block" style="font-size: 0.75rem;">{
+  <span class="json-key">"content"</span>: <span class="json-string">"사용자는 AWS 비용 분석 중. EC2가 65%..."</span>,
+  <span class="json-key">"version"</span>: <span class="json-number">3</span>
+}</div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Entities</h3>
+                    <p style="margin-bottom: 8px; color: #00d4ff; font-size: 0.9rem;">📌 용도: 핵심 숫자/키워드 보존</p>
+                    <p style="margin-bottom: 8px; font-size: 0.85rem; color: #aaa;">요약하면 날아가는 정확한 수치들. 배열 + 턴 번호로 FIFO 관리</p>
+                    <p style="margin-bottom: 12px;">Key: <span class="redis-key">chat:{tenant}:{session}:entities</span></p>
+                    <div class="json-block" style="font-size: 0.75rem;">[
+  {<span class="json-key">"key"</span>: <span class="json-string">"provider"</span>, <span class="json-key">"value"</span>: <span class="json-string">"aws"</span>, <span class="json-key">"turn"</span>: <span class="json-number">3</span>},
+  {<span class="json-key">"key"</span>: <span class="json-string">"budget"</span>, <span class="json-key">"value"</span>: <span class="json-string">"$10,000"</span>, <span class="json-key">"turn"</span>: <span class="json-number">5</span>},
+  {<span class="json-key">"key"</span>: <span class="json-string">"top_service"</span>, <span class="json-key">"value"</span>: <span class="json-string">"ec2"</span>, <span class="json-key">"turn"</span>: <span class="json-number">7</span>}
+]</div>
+                </div>
+            </div>
+
+            <!-- Long-term Memory vs Entities 비교 -->
+            <div class="card" style="margin-top: 20px;">
+                <h3 class="card-title">Long-term Memory vs Entities 차이점</h3>
+                <table>
+                    <tr>
+                        <th>구분</th>
+                        <th>Long-term Memory</th>
+                        <th>Entities</th>
+                    </tr>
+                    <tr>
+                        <td>형태</td>
+                        <td>자연어 문장</td>
+                        <td>key-value 구조</td>
+                    </tr>
+                    <tr>
+                        <td>내용</td>
+                        <td>"사용자가 뭘 하고 있었는지" 맥락</td>
+                        <td>정확한 숫자, 이름, 키워드</td>
+                    </tr>
+                    <tr>
+                        <td>왜 분리?</td>
+                        <td>요약하면 흐름은 유지되지만...</td>
+                        <td>숫자는 요약하면 날아감! (별도 보존)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>검색 방식</strong></td>
+                        <td class="cost"><strong>검색 안함</strong> - 항상 전체 포함</td>
+                        <td class="cost"><strong>검색 안함</strong> - 항상 전체 포함</td>
+                    </tr>
+                </table>
+                <div class="formula" style="margin-top: 16px;">
+                    <strong>핵심:</strong> 둘 다 <span style="color: #00ff80;">검색/매칭 없이</span> 매번 LLM에 통째로 전달됨 → <span style="color: #00ff80;">검색 실패 없음</span>
+                </div>
+            </div>
+
+            <!-- 실제 LLM에 전달되는 형태 -->
+            <div class="card" style="margin-top: 20px;">
+                <h3 class="card-title">실제 LLM Context에 들어가는 형태</h3>
+                <div class="json-block" style="font-size: 0.8rem;">
+<span style="color: #ff6464;"># System Prompt</span>
+당신은 FinOps AI 어시스턴트입니다...
+
+<span style="color: #ffd700;"># Long-term Memory (맥락)</span>
+[이전 대화 요약]
+사용자는 AWS 11월 비용을 분석 중이다. EC2가 전체의 65%를 차지하며,
+예산 $10,000 대비 초과 상태. RI 전환을 검토하기로 했다.
+
+<span style="color: #ffd700;"># Entities (정확한 수치, 배열에서 추출)</span>
+- provider: aws (turn 3)
+- month: 11월 (turn 4)
+- total_cost: $12,500 (turn 5)
+- budget: $10,000 (turn 5)
+- top_service: ec2, 65% (turn 7)
+
+<span style="color: #00d4ff;"># 단기기억 (최근 5턴 원본)</span>
+[턴6] User: "그럼 RI 전환하면 얼마나 절감돼?"
+[턴6] Assistant: "EC2 RI 1년 약정 시 약 30% 절감..."
+...
+
+<span style="color: #00ff80;"># 현재 질문</span>
+User: "1월은?"
+                </div>
+                <p style="margin-top: 12px; color: #aaa; font-size: 0.85rem;">
+                    → LLM이 위 전체 맥락을 보고 "아, 11월처럼 1월 비용도 분석해달라는 거구나" 유추
+                </p>
+            </div>
+
+            </div>
+
+        <!-- 4. Agentic RAG Flow -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">4</span> Agentic RAG - FAQ/Guide 검색</h2>
+            <div class="mermaid">
+flowchart LR
+    Q["Query"] --> SEARCH["search_all"]
+
+    subgraph SearchAll["search_all"]
+        FAQ["FAQ 검색<br/>k=3"]
+        GUIDE["Guide 검색<br/>k=7"]
+    end
+
+    SEARCH --> FAQ
+    SEARCH --> GUIDE
+    FAQ --> MERGE["합치기"]
+    GUIDE --> MERGE
+    MERGE --> RERANK["Rerank +<br/>충분성 평가"]
+
+    RERANK -->|"is_sufficient=true"| GEN["응답 생성"]
+    RERANK -->|"next_action=search_again"| RETRY["refined_query로<br/>재검색"]
+    RERANK -->|"next_action=get_section"| EXPAND["섹션 확장"]
+
+    RETRY --> SEARCH
+    EXPAND --> RERANK
+
+    RERANK -->|"3회 초과"| FALLBACK["Fallback"]
+
+    style Q fill:#00d4ff,color:#000
+    style GEN fill:#00ff80,color:#000
+    style FALLBACK fill:#ff6464,color:#000
+            </div>
+            <div class="grid-2" style="margin-top: 20px;">
+                <div class="card">
+                    <h3 class="card-title">Tools (3개)</h3>
+                    <ul>
+                        <li><span class="highlight">search_all</span> - FAQ 3개 + Guide 7개 통합 검색</li>
+                        <li><span class="highlight">search_by_metadata</span> - doc_type, has_steps 등 필터</li>
+                        <li><span class="highlight">get_section</span> - 문서 섹션 전체 가져오기</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Self-Reflective Loop</h3>
+                    <ul>
+                        <li>Rerank + 충분성 평가를 <span class="highlight">1회 LLM 호출</span>로 통합</li>
+                        <li>부족하면 <span class="highlight">refined_query</span>로 재검색</li>
+                        <li>최대 <span class="highlight">3회</span> tool call 후 Fallback</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. Context Builder -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">5</span> Context Builder - LLM 입력 구성</h2>
+            <div class="mermaid">
+flowchart TB
+    subgraph Sources["정보 소스"]
+        S1["System Prompt<br/>~1500 토큰"]
+        S2["Long-term Memory<br/>~500 토큰"]
+        S3["Entities<br/>~200 토큰"]
+        S4["단기기억<br/>~1500 토큰"]
+        S5["FAQ/Guide RAG<br/>~1500 토큰"]
+        S6["현재 질문<br/>~100 토큰"]
+    end
+
+    subgraph Build["Context Builder"]
+        S1 --> CTX["LLM Context"]
+        S2 --> CTX
+        S3 --> CTX
+        S4 --> CTX
+        S5 --> CTX
+        S6 --> CTX
+    end
+
+    CTX --> TOTAL["총 ~5,300 토큰"]
+
+    style TOTAL fill:#00d4ff,color:#000
+            </div>
+            <table style="margin-top: 20px;">
+                <tr>
+                    <th>소스</th>
+                    <th>토큰</th>
+                    <th>조건</th>
+                    <th>설명</th>
+                </tr>
+                <tr>
+                    <td>System Prompt</td>
+                    <td>~1500</td>
+                    <td>항상</td>
+                    <td>역할 + 규칙 + 도구 설명</td>
+                </tr>
+                <tr>
+                    <td>Long-term Memory</td>
+                    <td>~500</td>
+                    <td>항상</td>
+                    <td>전체 맥락 (고정)</td>
+                </tr>
+                <tr>
+                    <td>Entities</td>
+                    <td>~200</td>
+                    <td>항상</td>
+                    <td>구조화 정보 (key-value)</td>
+                </tr>
+                <tr>
+                    <td>단기기억</td>
+                    <td>~1500</td>
+                    <td>항상</td>
+                    <td>5턴 × 턴당 ~300</td>
+                </tr>
+                <tr>
+                    <td>FAQ/Guide</td>
+                    <td>~1500</td>
+                    <td>항상</td>
+                    <td>Agentic RAG 결과</td>
+                </tr>
+                <tr>
+                    <td>현재 질문</td>
+                    <td>~100</td>
+                    <td>항상</td>
+                    <td>사용자 입력</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- 6. 메뉴 Fallback -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">6</span> 메뉴 Fallback (인메모리)</h2>
+            <div class="grid-2">
+                <div class="card">
+                    <h3 class="card-title">언제 실행?</h3>
+                    <ul>
+                        <li>RAG <span class="highlight">confidence &lt; 0.5</span></li>
+                        <li>RAG 결과가 <span class="highlight">비어있음</span></li>
+                        <li>응답 생성 <span class="highlight">실패</span></li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">데이터 구조</h3>
+                    <div class="json-block" style="font-size: 0.8rem;">{
+  <span class="json-key">"menu_id"</span>: <span class="json-string">"budget_alert"</span>,
+  <span class="json-key">"name"</span>: <span class="json-string">"Budget Alert"</span>,
+  <span class="json-key">"url"</span>: <span class="json-string">"/cost/budget/alert"</span>,
+  <span class="json-key">"keywords"</span>: [<span class="json-string">"예산"</span>, <span class="json-string">"알림"</span>]
+}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. 비용 -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">7</span> 비용 분석</h2>
+            <div class="grid-2">
+                <div class="card">
+                    <h3 class="card-title">Long-term Memory (gpt-5-nano)</h3>
+                    <p style="font-size: 0.8rem; color: #888; margin-bottom: 8px;">기준: 300토큰/턴</p>
+                    <table>
+                        <tr>
+                            <th>항목</th>
+                            <th>비용</th>
+                        </tr>
+                        <tr>
+                            <td>재귀 요약 (5턴마다)</td>
+                            <td class="cost">~$0.0003</td>
+                        </tr>
+                        <tr>
+                            <td>100턴 대화</td>
+                            <td class="cost">~$0.006</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Agentic RAG</h3>
+                    <table>
+                        <tr>
+                            <th>항목</th>
+                            <th>비용</th>
+                        </tr>
+                        <tr>
+                            <td>Rerank + 충분성 (1~2회)</td>
+                            <td class="cost">$0.0003</td>
+                        </tr>
+                        <tr>
+                            <td>Agent 응답 생성</td>
+                            <td class="cost">$0.00055</td>
+                        </tr>
+                        <tr>
+                            <td>쿼리당 평균</td>
+                            <td class="cost">~$0.00115</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            <div class="card" style="margin-top: 20px;">
+                <h3 class="card-title">월간 비용 추정 (1,000 세션/일, 300토큰/턴)</h3>
+                <table>
+                    <tr>
+                        <th>시나리오</th>
+                        <th>턴/세션</th>
+                        <th>Memory Update</th>
+                        <th>Agentic RAG</th>
+                        <th>총합</th>
+                    </tr>
+                    <tr>
+                        <td>일반</td>
+                        <td>20턴</td>
+                        <td>~$36/월</td>
+                        <td>~$690/월</td>
+                        <td class="cost">~$726/월</td>
+                    </tr>
+                    <tr>
+                        <td>무거운 사용</td>
+                        <td>50턴</td>
+                        <td>~$90/월</td>
+                        <td>~$1,725/월</td>
+                        <td class="cost">~$1,815/월</td>
+                    </tr>
+                    <tr>
+                        <td><strong>최대</strong></td>
+                        <td><strong>100턴</strong></td>
+                        <td><strong>~$180/월</strong></td>
+                        <td><strong>~$3,450/월</strong></td>
+                        <td class="cost"><strong>~$3,630/월</strong></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- 8. 배치 작업 -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">8</span> 배치 작업 (Daily Cleanup)</h2>
+            <div class="grid-2">
+                <div class="card">
+                    <h3 class="card-title">실행 조건</h3>
+                    <ul>
+                        <li>실행 주기: <span class="highlight">매일 03:00 KST</span></li>
+                        <li>대상: <span class="highlight">24시간 이상 미사용</span> 세션</li>
+                        <li>TTL 만료 예정 키 명시적 삭제</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">삭제 대상</h3>
+                    <ul>
+                        <li><span class="redis-key">chat:{tenant}:{session}:short</span></li>
+                        <li><span class="redis-key">chat:{tenant}:{session}:memory</span></li>
+                        <li><span class="redis-key">chat:{tenant}:{session}:entities</span></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mermaid" style="margin-top: 20px;">
+flowchart LR
+    CRON["Cron<br/>03:00 KST"] --> SCAN["SCAN<br/>chat:*:*:short"]
+    SCAN --> CHK{{"TTL ≤ 0?"}}
+    CHK -->|Yes| DEL["DELETE<br/>short + memory + entities"]
+    CHK -->|No| SKIP["Skip"]
+    DEL --> NEXT["다음 키"]
+    SKIP --> NEXT
+    NEXT --> CHK
+
+    style CRON fill:#ffd700,color:#000
+    style DEL fill:#ff6464,color:#000
+            </div>
+        </div>
+
+        <!-- 9. 인프라 -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">9</span> 필요 인프라</h2>
+            <div class="grid-2">
+                <div class="card">
+                    <h3 class="card-title" style="color: #00ff80;">필요</h3>
+                    <ul>
+                        <li><span class="highlight">Redis</span> - 히스토리 (단기 + Long-term Memory + Entities)</li>
+                        <li><span class="highlight">FAISS</span> - FAQ/Guide 벡터 검색 (In-Memory)</li>
+                        <li><span class="highlight">LLM API</span> - 응답 생성, 재귀 요약, Rerank</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3 class="card-title" style="color: #ff6464;">불필요</h3>
+                    <ul>
+                        <li><span style="text-decoration: line-through; color: #666;">벡터 DB (히스토리용)</span> - Recursive Summarization으로 대체</li>
+                        <li><span style="text-decoration: line-through; color: #666;">임베딩 API (히스토리용)</span> - 불필요</li>
+                        <li><span style="text-decoration: line-through; color: #666;">태그 인덱스</span> - 검색 없음</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 10. 핵심 포인트 -->
+        <div class="section">
+            <h2 class="section-title"><span class="num">10</span> Recursive Summarization 핵심 포인트</h2>
+            <div class="grid-2">
+                <div class="card">
+                    <h3 class="card-title" style="color: #00ff80;">장점</h3>
+                    <ul>
+                        <li><span class="highlight">검색 불필요</span> → noise 없음</li>
+                        <li><span class="highlight">일관성 자동 유지</span> → outdated 정보 제거</li>
+                        <li><span class="highlight">토큰 효율</span> → ~500토큰 고정</li>
+                        <li><span class="highlight">구현 단순</span> → 태그/링크 관리 불필요</li>
+                        <li><span class="highlight">"아까 그거"</span> → 맥락에서 해결</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3 class="card-title" style="color: #ffd700;">한계 및 대응</h3>
+                    <ul>
+                        <li><span class="tag red">세부 손실</span> → Entities로 보존</li>
+                        <li><span class="tag red">요약 품질</span> → 프롬프트 튜닝</li>
+                        <li><span class="tag red">Hallucination</span> → Entities 교차 검증</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="formula" style="margin-top: 20px; text-align: center;">
+                "메모리는 로그가 아니라 <strong>상태</strong>다" - arXiv:2308.15022
+            </div>
+        </div>
+
+        <div class="footer">
+            OpsNow Copilot - Unified Context Architecture v0.4<br/>
+            Recursive Summarization + Agentic RAG
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+</html>
