@@ -1,0 +1,165 @@
+{
+  "scenarios": [
+    {
+      "name": "dashboard_data_question",
+      "description": "Dashboard에서 보이는 데이터 질문",
+      "input": {
+        "query": "이 달 총 비용이 얼마야?",
+        "domContext": "{\"summary\":{\"totalCost\":\"$45,678\",\"change\":\"+15%\",\"period\":\"2024-11\"}}",
+        "page": {
+          "url": "/dashboard",
+          "title": "Dashboard",
+          "vendor": "aws"
+        },
+        "memory": {
+          "short_term": [],
+          "memory": "",
+          "entities": {}
+        }
+      },
+      "expected": {
+        "answer_contains": "$45,678",
+        "uses_memory": false,
+        "uses_rag": false,
+        "answer_from": "dom_context"
+      }
+    },
+    {
+      "name": "memory_reference_question",
+      "description": "이전 대화 참조 질문",
+      "input": {
+        "query": "아까 말한 EC2 비용이 얼마였지?",
+        "domContext": "{}",
+        "page": {
+          "url": "/cost/services",
+          "title": "Service Cost"
+        },
+        "memory": {
+          "short_term": [
+            {
+              "turn": 1,
+              "user": "11월 AWS 비용 얼마야?",
+              "assistant": "11월 총 비용은 $12,500입니다."
+            },
+            {
+              "turn": 2,
+              "user": "EC2가 제일 많이 나왔어?",
+              "assistant": "네, EC2가 $8,200으로 65%를 차지합니다."
+            }
+          ],
+          "memory": "사용자는 AWS 비용 분석 중. EC2가 $8,200으로 65% 차지.",
+          "entities": {
+            "provider": "aws",
+            "period": "2024-11",
+            "total_cost": "$12,500",
+            "ec2_cost": "$8,200"
+          }
+        }
+      },
+      "expected": {
+        "answer_contains": "$8,200",
+        "uses_memory": true,
+        "uses_rag": false,
+        "answer_from": "memory"
+      }
+    },
+    {
+      "name": "how_to_question_with_menu_context",
+      "description": "메뉴 화면에서 How-to 질문",
+      "input": {
+        "query": "예산 알림 어떻게 설정해?",
+        "domContext": "{\"current_page\":\"/cost/budget\",\"title\":\"예산 관리\"}",
+        "page": {
+          "url": "/cost/budget",
+          "title": "예산 관리"
+        },
+        "memory": {
+          "short_term": [],
+          "memory": "",
+          "entities": {}
+        }
+      },
+      "expected": {
+        "uses_rag": true,
+        "rag_search_type": "search_by_metadata",
+        "rag_filters": {
+          "section_path_contains": "Budget"
+        }
+      }
+    },
+    {
+      "name": "table_full_data_question",
+      "description": "테이블 화면에서 전체 데이터 필요한 질문",
+      "input": {
+        "query": "Lambda가 제일 비싸?",
+        "domContext": "{\"table\":{\"headers\":[\"Service\",\"Cost\"],\"rows\":[[\"EC2\",\"$15,000\"],[\"Lambda\",\"$3,000\"],[\"S3\",\"$2,500\"]]},\"total_rows\":127,\"has_more\":true}",
+        "page": {
+          "url": "/cost/services",
+          "title": "Service List"
+        },
+        "memory": {
+          "short_term": [],
+          "memory": "",
+          "entities": {}
+        }
+      },
+      "expected": {
+        "note": "화면에는 상위 3개만 있지만 전체 127개 중 최대값 찾아야 함",
+        "should_mention": "현재 화면에서는",
+        "or_alternative": "IndexedDB 조회 필요 (향후 구현)"
+      }
+    },
+    {
+      "name": "combined_memory_and_screen",
+      "description": "Memory + 화면 컨텍스트 조합",
+      "input": {
+        "query": "11월이랑 비교하면 얼마나 올랐어?",
+        "domContext": "{\"summary\":{\"totalCost\":\"$52,340\",\"change\":\"+14.6%\",\"period\":\"2024-12\"}}",
+        "page": {
+          "url": "/dashboard",
+          "title": "Dashboard"
+        },
+        "memory": {
+          "short_term": [
+            {
+              "turn": 1,
+              "user": "11월 비용 얼마야?",
+              "assistant": "11월 총 비용은 $45,678입니다."
+            }
+          ],
+          "memory": "사용자는 11월 비용 $45,678 확인함.",
+          "entities": {
+            "nov_cost": "$45,678"
+          }
+        }
+      },
+      "expected": {
+        "answer_contains": ["$45,678", "$52,340", "$6,662"],
+        "uses_memory": true,
+        "uses_dom_context": true,
+        "calculation": "$52,340 - $45,678 = $6,662 증가"
+      }
+    },
+    {
+      "name": "no_context_fallback",
+      "description": "컨텍스트 없을 때 Fallback",
+      "input": {
+        "query": "비용 알림 설정 방법 알려줘",
+        "domContext": "{}",
+        "page": {
+          "url": "/random-page",
+          "title": "Random Page"
+        },
+        "memory": {
+          "short_term": [],
+          "memory": "",
+          "entities": {}
+        }
+      },
+      "expected": {
+        "uses_rag": true,
+        "rag_search_type": "search_all"
+      }
+    }
+  ]
+}
