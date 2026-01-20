@@ -1,0 +1,194 @@
+{
+  "menuItems": [
+    {
+      "name": "Overview",
+      "path": "/overview",
+      "description": "You can check the summary information of cloud usage costs and optimization.\nSelect a cloud service: When you select a cloud service, the information will be displayed on the screen based on the selected cloud service.\n-Current Spend: You can check the currently used cloud cost.\n-Forecasted Spend: You can check the forecasted cost for this month.\n-Last Month's Spend: You can check the last month's cost.\n-Available AutoSavings: You can check how much you can save the cost with AutoSavings.\nDetailed information: Displays detailed information about the selected tab."
+    },
+    {
+      "name": "Analytics",
+      "path": "/cost/cost-analytics",
+      "description": "You can check the detailed information about cloud cost trends.\nSelect a cloud service: When you select a cloud service, the information will be displayed on the screen based on the selected cloud service.\nSearch conditions: You can check the information by selecting Period, Account, Product, Region information. You can also check information by selecting more conditions with the [More Filters] button.\nDetailed information: Displays information based on the selected search conditions.\nTop 3/5/10 Cost Trends by Account/Product/Region: Displays the top 3/5/10 cost trends by account/product/region.\nDaily/Monthly button: You can check information on a daily or monthly basis.\nOpsNow Insight AI: You can check analysis information of AI. You can also download the information by clicking the download button on the right or check the details by clicking the more button.\nChart & Table: Displays detailed information with charts and tables."
+    },
+    {
+      "name": "Anomalies",
+      "path": "/anomalies/overview",
+      "description": "Analyzes cloud costs in real time by user-set rules and AI algorithms, and displays cost anomalies in the past.\nBy the information, you can identify possible causes of abnormal costs and easily find solutions.\nSelect tab: When you select a tab, the information will be displayed on the screen based on the selected tab.\nYou can check summary information about abnormal costs based on the user-set rules and AI algorithms.\n- Triggered Alerts: Displays the summary of cost anomaly detection information.\n- Chart: Displays the AI-based cost anomaly detection information and cost trend information as charts.\nDetailed information: Displays detailed information about the selected tab."
+    },
+    {
+      "name": "Anomalies",
+      "path": "/anomalies/alert-rule",
+      "description": "You can check the criteria for cost anomaly detection. And you can also set new criteria.\n- Search bar: You can search information by entering a search text.\n- [+ Add] button: Click this button to set a new criterion.\n- Detailed information table: Displays a list of criteria for detecting cost anomalies. You can edit the criteria by clicking the [Edit] button, and delete them by clicking the [Delete] button."
+    },
+    {
+      "name": "Anomalies",
+      "path": "/anomalies/history",
+      "description": "You can check cost anomaly detection history and notification history.\n- Select period: You can select the period to check history.\n- Search bar: You can search information by entering a search text.\n- Detailed information table: Displays the notification history of cost anomaly detection."
+    },
+    {
+      "name": "Budgets",
+      "path": "/budget/setting",
+      "description": "\"Budgets\" provides efficient management of cloud costs by setting cloud budgets, comparing them with actual costs and forecasting future costs.\nThe \"Budgets\" tab allows you to set cloud budgets and configure notifications when actual budgets or forecasts exceed or fall short of a certain period.\nYou can receive notifications in advance to prevent from exceeding or falling short of your budget and manage it efficiently."
+    },
+    {
+      "name": "Budgets",
+      "path": "/budget/history",
+      "description": "In 'History', you can view the notification delivery records, including when and under what conditions budget usage was detected, and which channels the alerts were sent through.\nIn the upper-right corner, you can check detailed notification records for the set period such as the sending date, budget name, budget group, period, threshold, CSP, notification channel, and recipient.\nYou can search for the specific budget through the search bar.\nUse the filter function to select records by group or CSP, allowing you to view only the relevant records.\nIf you choose email as your notification channel, you can see the budget information as an image at the time the notification was sent."
+    },
+    {
+      "name": "Resources",
+      "path": "/resources",
+      "description": "You can manage the cloud assets efficiently with the Resources menu. The Resources menu has two submenus as below\n- Usage: You can check the resource usage status and usage history for each cloud service.\n- Optimization: You can check the overall resource status whether you are using resources efficiently. And you can remove unnecessary resources and optimize the resources."
+    },
+    {
+      "name": "Usage",
+      "path": "/resources/usage/current",
+      "description": "Displays the resource usage of the selected cloud service.\n- Search conditions: You can check information by selecting the cloud accounts, regions, or tags.\n- Select products of cloud services: You can check information by selecting a specific cloud service product such as API Gateway, S3, etc.\n- Download in Excel: You can download the information on the screen to an Excel file.\n- Cloud resource graph: You can check the information of cloud resources in use with graphs.\n- Region: You can check information by region.\n- Type: You can check information by type.\n- Search bar: You can search information by entering a search text.\n- Resource information table: You can check detailed information about resources."
+    },
+    {
+      "name": "Usage",
+      "path": "/resources/usage/history",
+      "description": "Displays the usage history of the selected cloud service.\n- Search conditions: You can check information by selecting the period, cloud accounts, regions.\n- Select products of cloud services: You can check information by selecting a specific cloud service product such as API Gateway, S3, etc.\n- Download in Excel: You can download the information on the screen to an Excel file.\n- Cloud resource graph: You can check the information of cloud resources in use with graphs.\n- Search bar: You can search information by entering a search text.\n- Resource information table: You can check detailed information about resources."
+    },
+    {
+      "name": "Optimization",
+      "path": "/resources/optimization/rightsizing",
+      "description": "You can set conditions for recommendations to apply to the Right Sizing analysis for each cloud service. After changing the settings, click the [Save] button at the bottom right to save changes.\nYou can change settings for the Right Sizing analysis as follows:\n- [%Product name] Right Sizing Settings: You can reset settings to default conditions by clicking the [Reset settings] button.\n- Data Analysis Period: You can select a period for the Right Sizing analysis.\n- Idle: Recommend to terminate the resource if the usage is less than the defined usage after analyzing the usage of CPU, Network, and Memory. To use this condition, set the [On/Off] button in the upper right corner to On.\n- Downsize: Recommend to change to a lower price of resource if it falls below the usage defined during setting after analyzing the usage of CPU, Network, and Memory. To use this condition, set the [On/Off] button in the upper right corner to On.\n- Upsize: Recommend to change to a higher performance resource if the usage exceeds the defined threshold after analyzing the usage of CPU, Network, and Memory. To use this condition, set the [On/Off] button in the upper right corner to On."
+    },
+    {
+      "name": "Optimization",
+      "path": "/resources/optimization/unused-resources",
+      "description": "You can set conditions for recommendations to apply to the Unused Resource analysis for each cloud service. Use the toggle button and checkbox to activate the conditions.\nAfter changing the settings, click the [Save] button at the bottom right to save changes.\n- [%Cloud service name] Right Sizing Settings: You can reset settings to default conditions by clicking the [Reset settings] button.\n- ettings for each cloud service product: Select the checkbox on the left, and set the [On/Off] button in the upper right corner to On. After completing the settings, click the [Save] button at the bottom right to save the changes."
+    },
+    {
+      "name": "My Commitments",
+      "path": "/commitments",
+      "description": "You can check commitment contract information on one screen.\nSelect a cloud service: When you select a cloud service, the information will be displayed on the screen based on the selected cloud service.\nSelect period: Select a period to check information.\nSelect tab: Select a tab.\n- Recommendations tab: Displays the commitment recommendations for saving costs.\n- Utilization tab: The utilization is one of the indicators of how well you are using or benefiting from the commitment. This is the percentage of the used commitment out of the total purchased commitment. In a sense, the higher the utilization, the greater the cloud cost savings.\n- Coverage tab: The coverage is another indicator of how well you are using or benefiting from the commitment. This shows how much of your cloud usage was covered by the purchased commitments.\n- Inventory tab: The Inventory tab provides information about your purchased commitments. Learn more about the active commitments that are currently in use. Plan for additional purchases if your commitment expiration date is approaching."
+    },
+    {
+      "name": "My Commitments",
+      "path": "/commitments/recommendations",
+      "description": "Displays the commitment recommendations for saving costs.\n- Savings Plans/Reserved Instance tabs: You can select the tab to check information by commitment type.\n    - Savings Plans tab: You can check the commitment recommendations of the Savings Plans. The Savings Plans is a discount model that provides low pricing for cloud products usage by committing to an hourly usage fee for one or three years.\n    - Reserved Instance tab: You can check the commitment recommendations of the Reserved Instance. The Reserved Instance is a discount model that provides low pricing by reserving capacity and resources in a specific availability zone for 1 or 3 years.\n- Search conditions: You can check information by selecting products, cloud accounts, and period.\n- OpsNow Insight AI: Displays the commitment recommendations with AI.\n- List of commitment combinations: Displays a list of possible commitments through combinations of prepayment, period, product, etc. The recommendations will be labeled 'Recommended', while the lowest cost will be labeled 'Lowest Cost'. Click on an item and its details will appear below.\n- Commitment detailed information: Displays the detailed information for the item selected in the list of commitment combinations. To purchase the selected recommended plan, click the [Purchase Savings Plans/Reserved Instance] button in the upper right corner."
+    },
+    {
+      "name": "My Commitments",
+      "path": "/commitments/utilization",
+      "description": "The utilization is one of the indicators of how well you are using or benefiting from the commitment. This is the percentage of the used commitment out of the total purchased commitment. In a sense, the higher the utilization, the greater the cloud cost savings.\n- All/Savings Plans/Reserved Instance tabs: You can select the tab to check information by commitment type.\n- Search conditions: You can check information by selecting products and cloud accounts.\n- OpsNow Insight AI: Displays the commitment recommendations with AI.\n- Summary usage information of commitments: Displays the summary information such as Total Utilization, Commitment, Used Commitment, Total Savings, Savings Rate, etc.\n    - Total Utilization: Another indicator of how well you are using or benefiting from the commitment. This is the percentage of the used commitment out of the total purchased commitment. In a sense, the higher the utilization, the greater the cloud cost savings.\n    - Total Utilization = (RI Used commitment amount + SP Used commitment amount) ÷ Total purchased commitment amount × 100\n    - Commitment: Displays the total commitment amount.\n    - Used Commitment: Displays the total used commitment amount.\n    - Total Savings: The difference between the On-Demand Cost Equivalent amount and the total purchased commitment amount over the selected period.\n    - Total Savings = (RI On-Demand Cost Equivalent + SP On-Demand Cost Equivalent) - (RI Used commitment amount + SP Used commitment amount)\n    - Savings Rate: This shows the savings effect of the commitment in numbers. First, we convert the discounted cloud resource cost into On-Demand prices and then subtract the purchased commitment amount from the converted amount. Then, divide this amount by the converted amount, which is the On-Demand Cost Equivalent amount.\n    * Savings Rate = Total Savings ÷ (RI On-Demand Cost Equivalent + SP On-Demand Cost Equivalent) × 100\n- Detailed usage information of commitments: Displays the detailed usage information of commitments."
+    },
+    {
+      "name": "My Commitments",
+      "path": "/commitments/coverage",
+      "description": "The coverage is an indicator of how well you are using or benefiting from the commitment. This shows how much of your cloud usage was covered by the purchased commitments.\n- All/Savings Plans/Reserved Instance tabs: You can select the tab to check information by commitment type.\n- Search conditions: You can check information by selecting products and cloud accounts.\n- OpsNow Insight AI: Displays the commitment recommendations with AI.\n- Summary coverage information of commitments: Displays the summary information such as Total Coverage, On-Demand Cost Equivalent, Actual On-Demand Cost, Total Cost, etc.\n    - Total Coverage = (RI On-Demand Cost Equivalent + SP On-Demand Cost Equivalent) ÷ Total Cost × 100\n    - On-Demand Cost Equivalent: Displays the costs when used for the commitment time based on the on-demand price.\n    - Actual On-Demand Cost: Displays the actual on-demand costs.\n    - Total Cost: Displays the total cost of cloud usage.\n- Detailed coverage information of commitments: Displays the detailed coverage information of commitments."
+    },
+    {
+      "name": "My Commitments",
+      "path": "/commitments/inventory",
+      "description": "The Inventory tab provides information about your purchased commitments. Learn more about the active commitments that are currently in use. Plan for additional purchases if your commitment expiration date is approaching.\n- Savings Plans/Reserved Instance tabs: You can select the tab to check information by commitment type.\n- Summary information of commitment contracts: You can check information by selecting the remaining period of commitments.\n- Detailed information of commitment contracts: You can check the detailed information of the commitment contracts."
+    },
+    {
+      "name": "Policy Management",
+      "path": "/policy",
+      "description": "You can create and apply policies of your organization for cost, operation, security, and monitoring of cloud services.\nYou can automate policies to reduce security risks and manage resources and costs efficiently.\nSelect tab: Displays the information based on the selected tab.\n- Report tab: Displays the policy report information.\n- History tab: Display the history of sending reports of the policy.\n- Settings tab: You can set reports and add recipients to receive the reports.\nDetailed information: Displays the detailed information based on the selected tab."
+    },
+    {
+      "name": "Policy Management",
+      "path": "/policy/report",
+      "description": "Displays the policy report information.\n- Report list: You can select a report.\n- Select date: You can check reports by selecting the date.\n- Download button: You can check the details of the report and download the report.\n- Summary information: Displays the summary information of the report.\n- Detailed information: Displays the applied policies and results. You can check details about each item by clicking the [>] on the right."
+    },
+    {
+      "name": "Policy Management",
+      "path": "/policy/history",
+      "description": "Display the history of sending reports of the policy.\n- Select period: Select the period.\n- Search conditions: You can check information by entering a keyword for each item.\n- Search bar: You can search information by entering a search text.\n- Issued report list: Displays the list of issued reports."
+    },
+    {
+      "name": "Policy Management",
+      "path": "/policy/setting",
+      "description": "You can add a report, and add recipients to receive the reports.\n- In the Settings tab, click the [+ Add] button at the top right of the screen.\n- When the add report screen appears, click the pencil icon in the upper left corner. And enter the report name, and click the √ icon.\n- Select a cloud service.\n- In the Report Configuration, select the compliance to be used in the report and select cloud accounts.\n- In the Delivery Settings, select the Send Status, Frequency and add recipients to receive the report.\n- Click the [Save] button at the bottom right to save the changes.\nYou can edit the added reports.\nYou can delete the added reports."
+    },
+    {
+      "name": "AutoSavings",
+      "path": "/auto-savings",
+      "description": "You can save up to 65% on your cloud costs by using the OpsNow unique cost-savings model called AutoSavings.\nWhen you subscribe to AutoSavings, we only charge a small fee of saved costs."
+    },
+    {
+      "name": "Members",
+      "path": "/settings/members",
+      "description": "In the Members menu, you can review the list of invited members and invite additional members.\nAfter accessing the menu, you will see invited members. Use search bar at the top to find specific members. Click the three-dot button on the right to modify member information, resend invitations, or delete members. If the invitation email has expired and the member cannot join, you can use this option to resend the invitation email.\nTo invite a new member, click + Add button in the upper right corner. Insert the email address, select their role, choose the organization they will belong, and click Send button to send invitation email."
+    },
+    {
+      "name": "Organizations",
+      "path": "/settings/organization",
+      "description": "You can check the organizational information for the company you belong to in the menu.\nOnly administrators can manage organizations, such as adding or deleting organizations. General users can only view organizations.\nYou can create up to 10 organizations. To create additional organizations, please contact the OpsNow customer support team."
+    },
+    {
+      "name": "Cloud Accounts",
+      "path": "/settings/cloud-account",
+      "description": "This allows a member registers their own cloud account information or their company to OpsNow.\nWhen a customer registers a cloud account, OpsNow links with each cloud cost and resource status such as AWS, and provides it to the customer.\nThe information for deleting registered cloud accounts for various OpsNow products (e.g., AutoSavings) such as AWS:\nIf the cloud account is registered for a paid product like AutoSavings and is actively receiving services, it cannot be deleted.\nTo delete the cloud account, you must first disconnect and complete the termination process for the paid product."
+    },
+    {
+      "name": "Billing",
+      "path": "/settings/billing/overview",
+      "description": "If you subscribe to AutoSavings, you will be charged a fee for this service.\nClick on your username in the upper right corner and select the Billing menu to check the details of the fee charged. The Billing menu has five tabs as follows:\n- Overview tab: To check the billing summary information.\n- Invoices tab: To check the invoices list.\n- Payment Method tab: Manage the cards used for paying expenses.\n- Billing Contacts tab: Manage the individual who will receive the bills.."
+    },
+    {
+      "name": "Security",
+      "path": "/settings/security",
+      "description": "The Security menu allows you to check the activity history by user, member, and organization.\nYou can access the Security menu by clicking the username in the upper right corner and selecting the Security menu. The Security menu consist of three tabs as follows:\n- My Activity tab: Displays Security-related history, such as your login and logout is displayed.\n- Member Activity tab: Shows Security-related history of members of the organization you belong to is displayed.\n- Organization History tab: Shows Change Log information related to your organization.."
+    },
+    {
+      "name": "Authentication",
+      "path": "/settings/authentication",
+      "description": "To log in to OpsNow using your company's credentials through Single Sign-On (SSO) settings, click on your username in the upper right corner, then select the Authentication menu.\nEnable SSO Login: Activate this item, to log in to OpsNow using your company's credentials.\nSSO Type: Set the SSO type. Currently, only the SAML option is available.\nOpsNow SSO Integration Details: To configure SSO, copy each item and enter the information into your company's system.\nYour SSO Details: Verify and insert the following information in your company's system, and then click the Save button in the lower right corner.\n- Issuer URL (entityId)\n- SAML 2.0 Endpoint (HTTP) (singleSignOnService: URL)\n- X.509 Certificate\n\nHow to setting SSO?\n1. Set Enable SSO Login to \"On\".\n2. Select the preferred SSO method in SSO Type. Currently, only the SAML option is available.\n3. Copy the information displayed in OpsNow SSO Integration Details and insert it into your company's relevant system.\n4. After verifying the following information in your company's relevant system, insert it into Your SSO Details and click Save.\n   - Issuer URL (entityId)\n   - SAML 2.0 Endpoint (HTTP) (singleSignOnService: URL)\n   - X.509 Certificate"
+    },
+    {
+      "name": "API Key",
+      "path": "/settings/api-key",
+      "description": "You can connect OpsNow with an API Key. You will be taken to the appropriate menu for managing the security access key that is used with the APIs.\n- To add an API Key, click + Create new API Key button on the top left.\n- To delete an added API Key, click the X button to the right to delete certain the API Key."
+    },
+    {
+      "name": "Profile",
+      "path": "/settings/profile",
+      "description": "User Name: View and modify your current username.\nEmail ID: Through view only, your registered email is displayed here. Note that the email address cannot be changed.\nPassword: You can change your password.\nRole: Displays your role within the system.\nMarketing Opt-in Agreement: Through Opt-in/Opt-out options, you can choose whether to receiving marketing communications.\nTwo-Factor Authentication (2FA): To enhance account security.\nDelete Account: To permanently delete your account."
+    },
+    {
+      "name": "Overview",
+      "path": "/kpi/overview",
+      "description": "You can check the summary of your assigned FinOps KPI items and their current performance. \nSelect a group: When you select a group, the KPI dashboard will be displayed based on the assigned items. \n-KPI Performance: You can monitor the group's overall achievement rate across all assigned KPIs. You can check the current and the past values of your KPI items. \n-Goal Achievement: You can check how close you are to achieving your target values. You can identify KPI items that are not meeting their goals. \nDetailed information: Displays detailed metrics and trends for each KPI item."
+    },
+    {
+      "name": "History",
+      "path": "/kpi/overview",
+      "description": "You can check the history of KPI configurations and performance records.\nSelect a time period: When you select a time period, the history data will be displayed based on the selected range."
+    },
+    {
+      "name": "History_Report",
+      "path": "/kpi/overview",
+      "description": "You can check the monthly achievement status of each group in a checklist format. You can compare performance across different groups and time periods.\nView group performance: See how each group is performing against their KPI goals.\n-Period: You can check the achievement status for each month by group.\nExport reports: Download monthly achievement reports for analysis and sharing. You can see which KPIs were met or missed at a glance."
+    },
+    {
+      "name": "History_Audit_Log",
+      "path": "/kpi/overview",
+      "description": "You can check the audit logs of all KPI configuration changes.\nFilter and search: Find specific configuration changes using filters(add, change, delete) and search functionality.\nView configuration history: See detailed records of when settings were modified and by whom.\n-Goal Changes: You can track when target values were updated.\n-Template Changes: You can see when KPI templates were modified or applied.\n-Group Assignment Changes: You can track changes in group memberships and KPI assignments."
+    },
+    {
+      "name": "Setting",
+      "path": "/kpi/overview",
+      "description": "You can configure and manage FinOps KPIs settings for your organization. Adjust settings according to your organization's FinOps practices.\nSet up KPI framework: Configure KPI items, goals, templates, and groups to track and optimize costs per business and infrastructure unit."
+    },
+    {
+      "name": "Setting_Goals",
+      "path": "/kpi/overview",
+      "description": "You can set target values for each FinOps KPI item.\nDefine KPI targets: Set specific target values and its acceptable range that you want to achieve for each KPI item.\n-Default KPIs: You can view all available KPI items provided by OpsNow.\n-Set Target Values: You can configure goal thresholds for each KPI item.\n-Adjust Targets: You can update target values and its priority as your optimization goals evolve."
+    },
+    {
+      "name": "Setting_Templates",
+      "path": "/kpi/overview",
+      "description": "You can create and manage KPI templates by persona for consistent monitoring.\nUse persona-based templates: Apply templates designed for specific roles and responsibilities.\n-Default Templates: You can use pre-configured templates for common personas (e.g., Leadership, Finance, Engineering).\n-Bundle KPI Items: You can group relevant KPI items together into templates.\n-Create Custom Templates: You can create templates tailored to your organization's specific personas."
+    },
+    {
+      "name": "Setting_Groups",
+      "path": "/kpi/overview",
+      "description": "You can create groups and assign people to manage specific KPI items.\nAdd_Groups: Create groups to manage and monitor KPIs by team, department, or responsibility area. You can set up groups based on your organizational structure.\n-Assign Members: You can designate people who will be responsible for managing KPIs.\n-Assign KPI template: You can allocate specific KPI items or templates to each group. You can quickly assign bundles of KPIs to groups using templates."
+    }
+  ]
+}

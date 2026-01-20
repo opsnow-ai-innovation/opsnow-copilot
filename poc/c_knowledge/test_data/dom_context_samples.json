@@ -1,0 +1,85 @@
+{
+  "samples": [
+    {
+      "name": "structured_dashboard",
+      "description": "잘 구조화된 Dashboard 화면",
+      "raw": "{\"summary\":{\"totalCost\":\"$45,678\",\"change\":\"+15%\",\"period\":\"2024-11\"},\"charts\":[{\"type\":\"trend\",\"title\":\"월별 추이\"}],\"filters\":{\"vendor\":\"aws\",\"period\":\"2024-11\"}}",
+      "expected": {
+        "has_data": true,
+        "screen_type": "dashboard"
+      }
+    },
+    {
+      "name": "table_with_partial_data",
+      "description": "상위 10개만 있는 테이블 화면",
+      "raw": "{\"table\":{\"headers\":[\"Service\",\"Cost\",\"Change\"],\"rows\":[[\"EC2\",\"$15,000\",\"+25%\"],[\"Lambda\",\"$3,000\",\"-5%\"],[\"S3\",\"$2,500\",\"+10%\"]]},\"total_rows\":127,\"has_more\":true}",
+      "expected": {
+        "has_data": true,
+        "screen_type": "table"
+      }
+    },
+    {
+      "name": "simple_menu",
+      "description": "단순한 메뉴 화면",
+      "raw": "{\"current_page\":\"/cost/budget\",\"title\":\"예산 관리\",\"dom_summary\":\"예산 관리 메뉴\"}",
+      "expected": {
+        "has_data": true,
+        "screen_type": null
+      }
+    },
+    {
+      "name": "empty_object",
+      "description": "빈 객체",
+      "raw": "{}",
+      "expected": {
+        "has_data": false,
+        "screen_type": null
+      }
+    },
+    {
+      "name": "empty_string",
+      "description": "빈 문자열",
+      "raw": "",
+      "expected": {
+        "has_data": false,
+        "screen_type": null
+      }
+    },
+    {
+      "name": "text_only",
+      "description": "JSON 아닌 텍스트",
+      "raw": "현재 화면: 비용 분석 대시보드. 2024년 11월 데이터 표시 중.",
+      "expected": {
+        "has_data": true,
+        "screen_type": null
+      }
+    },
+    {
+      "name": "invalid_json",
+      "description": "깨진 JSON",
+      "raw": "{broken json: invalid",
+      "expected": {
+        "has_data": true,
+        "screen_type": null
+      }
+    },
+    {
+      "name": "resource_detail",
+      "description": "리소스 상세 화면",
+      "raw": "{\"resource\":{\"type\":\"EC2\",\"name\":\"prod-web-01\",\"cost\":\"$1,250\",\"region\":\"us-east-1\",\"tags\":{\"env\":\"prod\",\"team\":\"backend\"}},\"current_page\":\"/resources/detail\"}",
+      "expected": {
+        "has_data": true,
+        "screen_type": "detail"
+      }
+    },
+    {
+      "name": "complex_dashboard",
+      "description": "복잡한 Dashboard (여러 위젯)",
+      "raw": "{\"screen_type\":\"dashboard\",\"summary\":{\"totalCost\":\"$125,430\",\"change\":\"+8.5%\",\"period\":\"2024-11\",\"topService\":\"EC2\"},\"widgets\":[{\"type\":\"cost_breakdown\",\"data\":{\"EC2\":65,\"Lambda\":15,\"S3\":10,\"Others\":10}},{\"type\":\"alerts\",\"count\":3}],\"filters\":{\"vendor\":\"aws\",\"account\":\"prod\"}}",
+      "expected": {
+        "has_data": true,
+        "screen_type": "dashboard"
+      }
+    }
+  ]
+}
