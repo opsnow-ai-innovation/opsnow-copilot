@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket PoC - Phase 4 (안정성)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        h3 { margin-top: 0; color: #555; }
+
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status.connecting { background: #fff3e0; color: #ef6c00; }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+        .status.reconnecting { background: #e3f2fd; color: #1565c0; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: #2196f3; color: white; }
+        .btn-success { background: #4caf50; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn-warning { background: #ff9800; color: white; }
+        .btn-secondary { background: #9e9e9e; color: white; }
+
+        #log {
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .log-entry { margin-bottom: 4px; padding: 2px 0; border-bottom: 1px solid #333; }
+        .log-time { color: #6a9955; }
+        .log-send { color: #569cd6; }
+        .log-receive { color: #ce9178; }
+        .log-info { color: #dcdcaa; }
+        .log-error { color: #f44747; }
+        .log-success { color: #4ec9b0; }
+        .log-reconnect { color: #c586c0; }
+
+        .test-panel {
+            background: #e3f2fd;
+            border: 2px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .test-panel h4 { margin: 0 0 15px 0; color: #1565c0; }
+
+        .rate-limit-display {
+            background: #fff8e1;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .rate-limit-bar {
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .rate-limit-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #ff9800, #f44336);
+            transition: width 0.3s;
+        }
+
+        .reconnect-info {
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+
+    </style>
+</head>
+<body>
+    <h1>WebSocket PoC - Phase 4: 안정성</h1>
+    <p style="color: #666; margin-top: -10px;">재연결, Rate Limiting, 메시지 큐잉 검증</p>
+
+    <!-- 연결 상태 -->
+    <div class="section">
+        <h3>연결 상태</h3>
+        <div id="status" class="status disconnected">연결 안됨</div>
+        <span id="reconnectStatus" style="margin-left: 15px; color: #666;"></span>
+        <div class="controls" style="margin-top: 10px;">
+            <button class="btn-success" onclick="connectWithToken()">JWT 발급 & 연결</button>
+            <button id="disconnectBtn" class="btn-secondary" onclick="disconnect()" disabled>연결 해제</button>
+            <label style="display: flex; align-items: center; gap: 5px; margin-left: 20px;">
+                <input type="checkbox" id="autoReconnect" checked>
+                <span>자동 재연결</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- 4-1. Rate Limiting 테스트 -->
+    <div class="section">
+        <h3>4-1. Rate Limiting 테스트</h3>
+        <p style="color: #666; font-size: 13px;">10회/60초 제한 검증</p>
+
+        <div class="rate-limit-display">
+            <div style="display: flex; justify-content: space-between;">
+                <strong>Rate Limit 상태</strong>
+                <span id="rateLimitText">- / 10</span>
+            </div>
+            <div class="rate-limit-bar">
+                <div class="rate-limit-bar-fill" id="rateLimitBar" style="width: 0%;"></div>
+            </div>
+            <div style="font-size: 12px; color: #666;">
+                <span id="rateLimitRemaining">남은 요청: -</span>
+                <span style="margin-left: 15px;" id="rateLimitWindow">윈도우: 60초</span>
+            </div>
+        </div>
+
+        <div class="test-panel">
+            <h4>Rate Limit 테스트</h4>
+            <div class="controls">
+                <button class="btn-primary" onclick="sendSingleQuery()" id="sendOneBtn" disabled>요청 1회 전송</button>
+                <button class="btn-warning" onclick="sendBurstQueries(5)" id="send5Btn" disabled>요청 5회 연속</button>
+                <button class="btn-danger" onclick="sendBurstQueries(12)" id="send12Btn" disabled>요청 12회 연속 (초과 테스트)</button>
+                <button class="btn-secondary" onclick="resetRateLimit()">Rate Limit 초기화</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4-2. Ping/Pong 타임아웃 테스트 -->
+    <div class="section">
+        <h3>4-2. Ping/Pong 타임아웃 테스트</h3>
+        <p style="color: #666; font-size: 13px;">서버 ping에 pong 응답하지 않으면 3회 후 연결 끊김</p>
+
+        <div style="background: #fff3e0; border: 1px solid #ff9800; padding: 15px; border-radius: 6px; margin: 10px 0;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <strong>Ping/Pong 상태</strong>
+                <span id="pongStatus">정상</span>
+            </div>
+            <div style="font-size: 13px;">
+                <div>무응답 횟수: <span id="missedPongs">0</span> / <span id="maxMissedPongs">3</span></div>
+                <div>마지막 ping: <span id="lastPing">-</span></div>
+            </div>
+        </div>
+
+        <div class="test-panel" style="background: #fff3e0; border-color: #ff9800;">
+            <h4 style="color: #e65100;">Pong 응답 테스트</h4>
+            <p style="font-size: 12px; color: #666;">
+                pong 응답을 중지하면 서버가 3회 ping 후 연결을 끊습니다.<br>
+                (ping 간격: 30초, pong 대기: 10초 → 약 2분 후 연결 종료)
+            </p>
+            <div class="controls">
+                <label style="display: flex; align-items: center; gap: 5px; padding: 10px; background: white; border-radius: 6px;">
+                    <input type="checkbox" id="enablePong" checked>
+                    <span>pong 응답 활성화</span>
+                </label>
+                <button class="btn-warning" onclick="quickPongTest()" id="quickPongTestBtn" disabled>빠른 테스트 (5초 간격)</button>
+                <button class="btn-secondary" onclick="restoreNormalMode()" id="restoreNormalBtn" disabled>정상 모드 복원 (30초 간격)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4-3. 재연결 테스트 -->
+    <div class="section">
+        <h3>4-3. 재연결 테스트 (Exponential Backoff)</h3>
+        <p style="color: #666; font-size: 13px;">연결 끊김 시 자동 재연결 (1초 → 2초 → 4초 → 8초 → 최대 30초)</p>
+
+        <div class="reconnect-info">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <strong>재연결 정보</strong>
+                <span id="reconnectCount">재연결 시도: 0회</span>
+            </div>
+            <div style="font-size: 13px;">
+                <div>현재 대기 시간: <span id="currentBackoff">-</span></div>
+                <div>다음 재연결: <span id="nextReconnect">-</span></div>
+            </div>
+        </div>
+
+        <div class="test-panel" style="background: #fce4ec; border-color: #e91e63;">
+            <h4 style="color: #c2185b;">재연결 테스트</h4>
+            <p style="font-size: 12px; color: #666;">서버를 중지하거나 아래 버튼으로 강제 연결 해제 후 재연결 동작 확인</p>
+            <div class="controls">
+                <button class="btn-danger" onclick="forceDisconnect()" id="forceDisconnectBtn" disabled>강제 연결 해제 (재연결 테스트)</button>
+                <button class="btn-secondary" onclick="resetReconnect()">재연결 카운터 초기화</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 통신 로그 -->
+    <div class="section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>통신 로그</h3>
+            <button class="btn-secondary" onclick="clearLog()" style="padding: 5px 10px; font-size: 12px;">로그 지우기</button>
+        </div>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const SERVER_URL = 'http://localhost:8000';
+        const WS_URL = 'ws://localhost:8000/ws/copilot';
+
+        let ws = null;
+        let currentToken = null;
+
+        // 재연결 설정
+        let reconnectAttempts = 0;
+        let reconnectTimer = null;
+        let isManualDisconnect = false;
+        const RECONNECT_BASE_DELAY = 1000;  // 1초
+        const RECONNECT_MAX_DELAY = 30000;  // 30초
+        const RECONNECT_MAX_ATTEMPTS = 10;
+
+
+        // UI 요소
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const reconnectStatusEl = document.getElementById('reconnectStatus');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const sendOneBtn = document.getElementById('sendOneBtn');
+        const send5Btn = document.getElementById('send5Btn');
+        const send12Btn = document.getElementById('send12Btn');
+        const forceDisconnectBtn = document.getElementById('forceDisconnectBtn');
+        const autoReconnectCheckbox = document.getElementById('autoReconnect');
+        const enablePongCheckbox = document.getElementById('enablePong');
+        const quickPongTestBtn = document.getElementById('quickPongTestBtn');
+        const restoreNormalBtn = document.getElementById('restoreNormalBtn');
+
+        function updateStatus(state, message) {
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = message;
+            const isConnected = state === 'connected';
+            disconnectBtn.disabled = !isConnected;
+            sendOneBtn.disabled = !isConnected;
+            send5Btn.disabled = !isConnected;
+            send12Btn.disabled = !isConnected;
+            forceDisconnectBtn.disabled = !isConnected;
+            quickPongTestBtn.disabled = !isConnected;
+            restoreNormalBtn.disabled = !isConnected;
+        }
+
+        function addLog(type, message) {
+            const time = new Date().toLocaleTimeString('ko-KR');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            let typeClass = 'log-info';
+            let prefix = '';
+            if (type === 'send') { typeClass = 'log-send'; prefix = '>>> '; }
+            if (type === 'receive') { typeClass = 'log-receive'; prefix = '<<< '; }
+            if (type === 'error') { typeClass = 'log-error'; prefix = '!!! '; }
+            if (type === 'success') { typeClass = 'log-success'; prefix = 'OK '; }
+            if (type === 'reconnect') { typeClass = 'log-reconnect'; prefix = '~~~ '; }
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="${typeClass}">${prefix}${escapeHtml(message)}</span>`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearLog() {
+            logEl.innerHTML = '';
+        }
+
+        // ========================================
+        // Rate Limit 표시
+        // ========================================
+
+        function updateRateLimitDisplay(rateLimit) {
+            if (!rateLimit) return;
+
+            const used = rateLimit.limit - rateLimit.remaining;
+            const percent = (used / rateLimit.limit) * 100;
+
+            document.getElementById('rateLimitText').textContent = `${used} / ${rateLimit.limit}`;
+            document.getElementById('rateLimitBar').style.width = `${percent}%`;
+            document.getElementById('rateLimitRemaining').textContent = `남은 요청: ${rateLimit.remaining}`;
+            document.getElementById('rateLimitWindow').textContent = `윈도우: ${rateLimit.window}초`;
+        }
+
+        // ========================================
+        // 연결 관리
+        // ========================================
+
+        async function connectWithToken() {
+            try {
+                isManualDisconnect = false;
+                addLog('info', 'JWT 발급 요청...');
+                const response = await fetch(`${SERVER_URL}/api/auth/token?username=test@example.com&name=테스트사용자`, { method: 'POST' });
+                const data = await response.json();
+                currentToken = data.access_token;
+                addLog('success', 'JWT 발급 성공');
+                connect();
+            } catch (error) {
+                addLog('error', `JWT 발급 실패: ${error.message}`);
+            }
+        }
+
+        function connect() {
+            if (!currentToken) {
+                addLog('error', '토큰이 없습니다.');
+                return;
+            }
+
+            updateStatus('connecting', '연결 중...');
+            const url = `${WS_URL}?token=${currentToken}`;
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                addLog('success', 'WebSocket 연결 성공');
+                reconnectAttempts = 0;
+                updateReconnectInfo();
+            };
+
+            ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
+
+            ws.onerror = (error) => {
+                addLog('error', 'WebSocket 에러');
+            };
+
+            ws.onclose = (event) => {
+                updateStatus('disconnected', '연결 안됨');
+                addLog('info', `연결 종료 (code: ${event.code}, reason: ${event.reason || 'none'})`);
+                ws = null;
+
+                // 자동 재연결
+                if (!isManualDisconnect && autoReconnectCheckbox.checked) {
+                    scheduleReconnect();
+                }
+            };
+        }
+
+        function disconnect() {
+            isManualDisconnect = true;
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            if (ws) {
+                ws.close();
+            }
+            reconnectStatusEl.textContent = '';
+        }
+
+        function forceDisconnect() {
+            isManualDisconnect = false;  // 재연결 허용
+            if (ws) {
+                ws.close();
+                addLog('reconnect', '강제 연결 해제 - 재연결 시작...');
+            }
+        }
+
+        // ========================================
+        // Exponential Backoff 재연결
+        // ========================================
+
+        function scheduleReconnect() {
+            if (reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+                addLog('error', `최대 재연결 시도 횟수(${RECONNECT_MAX_ATTEMPTS}) 초과`);
+                reconnectStatusEl.textContent = '재연결 실패';
+                return;
+            }
+
+            // Exponential Backoff 계산
+            const delay = Math.min(
+                RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts),
+                RECONNECT_MAX_DELAY
+            );
+
+            reconnectAttempts++;
+            updateStatus('reconnecting', '재연결 대기...');
+            addLog('reconnect', `재연결 시도 ${reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS} (${delay/1000}초 후)`);
+
+            updateReconnectInfo(delay);
+
+            reconnectTimer = setTimeout(() => {
+                addLog('reconnect', '재연결 시도 중...');
+                connect();
+            }, delay);
+        }
+
+        function updateReconnectInfo(delay = null) {
+            document.getElementById('reconnectCount').textContent = `재연결 시도: ${reconnectAttempts}회`;
+
+            if (delay) {
+                document.getElementById('currentBackoff').textContent = `${delay/1000}초`;
+                document.getElementById('nextReconnect').textContent = new Date(Date.now() + delay).toLocaleTimeString('ko-KR');
+            } else {
+                document.getElementById('currentBackoff').textContent = '-';
+                document.getElementById('nextReconnect').textContent = '-';
+            }
+        }
+
+        function resetReconnect() {
+            reconnectAttempts = 0;
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            updateReconnectInfo();
+            reconnectStatusEl.textContent = '';
+            addLog('info', '재연결 카운터 초기화');
+        }
+
+        // ========================================
+        // 메시지 처리
+        // ========================================
+
+        function handleMessage(data) {
+            const type = data.type;
+
+            if (type !== 'ping') {
+                addLog('receive', `${type}: ${JSON.stringify(data).substring(0, 80)}...`);
+            }
+
+            switch (type) {
+                case 'connected':
+                    updateStatus('connected', '연결됨');
+                    addLog('success', `인증 완료: ${data.user?.name}`);
+                    if (data.rateLimit) {
+                        updateRateLimitDisplay(data.rateLimit);
+                    }
+                    break;
+
+                case 'response':
+                    addLog('success', '응답 수신');
+                    if (data.rateLimit) {
+                        updateRateLimitDisplay(data.rateLimit);
+                    }
+                    break;
+
+                case 'rate_limit_status':
+                    if (data.rateLimit) {
+                        updateRateLimitDisplay(data.rateLimit);
+                    }
+                    break;
+
+                case 'error':
+                    addLog('error', `에러 [${data.code}]: ${data.message}`);
+                    if (data.code === 'RATE_LIMITED' && data.rateLimit) {
+                        updateRateLimitDisplay({ ...data.rateLimit, remaining: 0 });
+                    }
+                    break;
+
+                case 'ping':
+                    // Ping/Pong 상태 업데이트
+                    const modeText = data.quickTestMode ? ' [빠른테스트]' : '';
+                    document.getElementById('lastPing').textContent = new Date().toLocaleTimeString('ko-KR') + modeText;
+                    if (data.missedPongs !== undefined) {
+                        document.getElementById('missedPongs').textContent = data.missedPongs;
+                        document.getElementById('maxMissedPongs').textContent = data.maxMissedPongs || 3;
+
+                        const pongStatusEl = document.getElementById('pongStatus');
+                        if (data.missedPongs === 0) {
+                            pongStatusEl.textContent = '정상' + modeText;
+                            pongStatusEl.style.color = '#2e7d32';
+                        } else if (data.missedPongs < data.maxMissedPongs - 1) {
+                            pongStatusEl.textContent = `경고 (${data.missedPongs}회 무응답)${modeText}`;
+                            pongStatusEl.style.color = '#ff9800';
+                        } else {
+                            pongStatusEl.textContent = `위험! (${data.missedPongs}회 무응답)${modeText}`;
+                            pongStatusEl.style.color = '#f44336';
+                        }
+                    }
+
+                    // pong 응답 (체크박스 상태에 따라)
+                    if (enablePongCheckbox.checked) {
+                        sendMessage({ type: 'pong' });
+                        addLog('send', 'pong 응답');
+                    } else {
+                        addLog('info', 'pong 응답 비활성화 - 응답 안함');
+                    }
+                    break;
+            }
+        }
+
+        function sendMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+                if (data.type !== 'pong') {
+                    addLog('send', `${data.type}: ${data.query || ''}`);
+                }
+                return true;
+            } else {
+                addLog('error', '연결 안됨 - 메시지 전송 실패');
+                return false;
+            }
+        }
+
+        // ========================================
+        // Rate Limit 테스트
+        // ========================================
+
+        function sendSingleQuery() {
+            sendMessage({
+                type: 'query',
+                query: `테스트 쿼리 (${new Date().toLocaleTimeString()})`
+            });
+        }
+
+        async function sendBurstQueries(count) {
+            addLog('info', `=== ${count}회 연속 요청 시작 ===`);
+
+            for (let i = 0; i < count; i++) {
+                sendMessage({
+                    type: 'query',
+                    query: `연속 요청 ${i + 1}/${count}`
+                });
+                await new Promise(r => setTimeout(r, 100));  // 100ms 간격
+            }
+
+            addLog('info', `=== ${count}회 연속 요청 완료 ===`);
+        }
+
+        async function resetRateLimit() {
+            try {
+                await fetch(`${SERVER_URL}/api/rate-limit/reset?user_id=test@example.com`, { method: 'POST' });
+                addLog('success', 'Rate Limit 초기화 완료');
+
+                // UI 즉시 초기화
+                updateRateLimitDisplay({ limit: 10, remaining: 10, window: 60 });
+
+                // 서버 상태 새로고침
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    sendMessage({ type: 'get_rate_limit' });
+                }
+            } catch (error) {
+                addLog('error', `Rate Limit 초기화 실패: ${error.message}`);
+            }
+        }
+
+        // ========================================
+        // Pong 타임아웃 테스트
+        // ========================================
+
+        async function quickPongTest() {
+            try {
+                addLog('info', '=== 빠른 Pong 테스트 시작 (5초 간격) ===');
+                addLog('info', 'pong 응답 비활성화 상태로 테스트하면 ~25초 후 연결 종료');
+
+                // pong 응답 비활성화
+                enablePongCheckbox.checked = false;
+
+                // 서버에 빠른 ping 테스트 요청
+                const response = await fetch(`${SERVER_URL}/api/heartbeat/quick-test?token=${currentToken}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    addLog('success', '빠른 ping 테스트 시작됨 (서버에서 5초 간격으로 ping 전송)');
+                } else {
+                    addLog('error', '빠른 테스트 요청 실패');
+                }
+            } catch (error) {
+                addLog('error', `빠른 테스트 실패: ${error.message}`);
+            }
+        }
+
+        async function restoreNormalMode() {
+            try {
+                // pong 응답 활성화
+                enablePongCheckbox.checked = true;
+
+                // 서버에 정상 모드 복원 요청
+                const response = await fetch(`${SERVER_URL}/api/heartbeat/normal?token=${currentToken}`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    addLog('success', '정상 모드 복원됨 (30초 간격 ping)');
+                    // 상태 표시 초기화
+                    document.getElementById('missedPongs').textContent = '0';
+                    document.getElementById('pongStatus').textContent = '정상';
+                    document.getElementById('pongStatus').style.color = '#2e7d32';
+                } else {
+                    addLog('error', '정상 모드 복원 실패');
+                }
+            } catch (error) {
+                addLog('error', `정상 모드 복원 실패: ${error.message}`);
+            }
+        }
+
+    </script>
+</body>
+</html>

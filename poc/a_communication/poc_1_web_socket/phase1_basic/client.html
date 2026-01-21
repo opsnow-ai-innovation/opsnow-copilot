@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket PoC - Phase 1</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status.connecting { background: #fff3e0; color: #ef6c00; }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-connect { background: #4caf50; color: white; }
+        .btn-disconnect { background: #f44336; color: white; }
+        .btn-send { background: #2196f3; color: white; }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .log-container {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .log-header h3 { margin: 0; }
+        .clear-btn {
+            background: #9e9e9e;
+            color: white;
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        #log {
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+            border-bottom: 1px solid #333;
+        }
+        .log-time { color: #6a9955; }
+        .log-send { color: #569cd6; }
+        .log-receive { color: #ce9178; }
+        .log-info { color: #dcdcaa; }
+        .log-error { color: #f44747; }
+
+        .suggestions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .suggestion-btn {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket PoC - Phase 1: 기본 연결</h1>
+
+    <div id="status" class="status disconnected">
+        연결 안됨
+    </div>
+
+    <div class="controls">
+        <button id="connectBtn" class="btn-connect" onclick="connect()">연결</button>
+        <button id="disconnectBtn" class="btn-disconnect" onclick="disconnect()" disabled>연결 해제</button>
+    </div>
+
+    <div class="input-group">
+        <input type="text" id="queryInput" placeholder="질문을 입력하세요..." onkeypress="handleKeyPress(event)">
+        <button id="sendBtn" class="btn-send" onclick="sendQuery()" disabled>전송</button>
+    </div>
+
+    <div id="suggestions" class="suggestions"></div>
+
+    <div class="log-container">
+        <div class="log-header">
+            <h3>통신 로그</h3>
+            <button class="clear-btn" onclick="clearLog()">로그 지우기</button>
+        </div>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        // WebSocket 인스턴스
+        let ws = null;
+
+        // 연결 상태
+        const ConnectionState = {
+            DISCONNECTED: 'disconnected',
+            CONNECTING: 'connecting',
+            CONNECTED: 'connected'
+        };
+
+        // UI 요소
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const queryInput = document.getElementById('queryInput');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const suggestionsEl = document.getElementById('suggestions');
+
+        // 상태 업데이트
+        function updateStatus(state, message) {
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = message;
+
+            const isConnected = state === ConnectionState.CONNECTED;
+            connectBtn.disabled = isConnected || state === ConnectionState.CONNECTING;
+            disconnectBtn.disabled = !isConnected;
+            sendBtn.disabled = !isConnected;
+            queryInput.disabled = !isConnected;
+        }
+
+        // 로그 추가
+        function addLog(type, message) {
+            const time = new Date().toLocaleTimeString('ko-KR');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            let typeClass = 'log-info';
+            let prefix = '';
+            if (type === 'send') { typeClass = 'log-send'; prefix = '>>> '; }
+            if (type === 'receive') { typeClass = 'log-receive'; prefix = '<<< '; }
+            if (type === 'error') { typeClass = 'log-error'; prefix = '!!! '; }
+
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="${typeClass}">${prefix}${escapeHtml(message)}</span>`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearLog() {
+            logEl.innerHTML = '';
+        }
+
+        // WebSocket 연결
+        function connect() {
+            updateStatus(ConnectionState.CONNECTING, '연결 중...');
+            addLog('info', 'WebSocket 연결 시도...');
+
+            // 로컬 서버 주소
+            ws = new WebSocket('ws://localhost:8000/ws/copilot');
+
+            ws.onopen = () => {
+                updateStatus(ConnectionState.CONNECTED, '연결됨');
+                addLog('info', 'WebSocket 연결 성공!');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+
+            ws.onerror = (error) => {
+                addLog('error', 'WebSocket 에러 발생');
+                console.error('WebSocket Error:', error);
+            };
+
+            ws.onclose = (event) => {
+                updateStatus(ConnectionState.DISCONNECTED, '연결 안됨');
+                addLog('info', `연결 종료 (code: ${event.code})`);
+                ws = null;
+            };
+        }
+
+        // 연결 해제
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        // 메시지 처리
+        function handleMessage(data) {
+            addLog('receive', `${data.type}: ${JSON.stringify(data)}`);
+
+            switch (data.type) {
+                case 'connected':
+                    addLog('info', `서버 시간: ${data.serverTime}`);
+                    break;
+
+                case 'response':
+                    addLog('info', `응답: ${data.answer}`);
+                    // 제안 버튼 표시
+                    if (data.suggestions && data.suggestions.length > 0) {
+                        showSuggestions(data.suggestions);
+                    }
+                    break;
+
+                case 'ping':
+                    // pong 자동 응답
+                    sendMessage({ type: 'pong' });
+                    addLog('info', 'ping 수신 → pong 응답');
+                    break;
+
+                case 'error':
+                    addLog('error', `에러 [${data.code}]: ${data.message}`);
+                    break;
+
+                default:
+                    addLog('info', `알 수 없는 메시지: ${data.type}`);
+            }
+        }
+
+        // 메시지 전송
+        function sendMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+                addLog('send', `${data.type}: ${JSON.stringify(data)}`);
+            }
+        }
+
+        // 질문 전송
+        function sendQuery() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            // 설계 문서 기반 query 메시지 구조
+            const message = {
+                type: 'query',
+                query: query,
+                domContext: JSON.stringify({
+                    summary: {
+                        totalCost: '$45,678',
+                        change: '+15%',
+                        period: '2024-01'
+                    },
+                    filters: {
+                        period: '2024-01',
+                        vendor: 'aws'
+                    }
+                }),
+                page: {
+                    url: window.location.href,
+                    title: document.title,
+                    vendor: 'aws'
+                }
+            };
+
+            sendMessage(message);
+            queryInput.value = '';
+            suggestionsEl.innerHTML = '';
+        }
+
+        // 제안 버튼 표시
+        function showSuggestions(suggestions) {
+            suggestionsEl.innerHTML = '';
+            suggestions.forEach(s => {
+                const btn = document.createElement('button');
+                btn.className = 'suggestion-btn';
+                btn.textContent = s.text;
+                btn.onclick = () => {
+                    if (s.query) {
+                        queryInput.value = s.query;
+                        sendQuery();
+                    }
+                };
+                suggestionsEl.appendChild(btn);
+            });
+        }
+
+        // 엔터키 처리
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendQuery();
+            }
+        }
+
+        // 페이지 로드 시 자동 연결 (옵션)
+        // connect();
+    </script>
+</body>
+</html>
