@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket PoC - Phase 3 (콜백 패턴)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        h3 { margin-top: 0; color: #555; }
+
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status.connecting { background: #fff3e0; color: #ef6c00; }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: #2196f3; color: white; }
+        .btn-success { background: #4caf50; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn-warning { background: #ff9800; color: white; }
+        .btn-secondary { background: #9e9e9e; color: white; }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        #log {
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .log-entry { margin-bottom: 4px; padding: 2px 0; border-bottom: 1px solid #333; }
+        .log-time { color: #6a9955; }
+        .log-send { color: #569cd6; }
+        .log-receive { color: #ce9178; }
+        .log-info { color: #dcdcaa; }
+        .log-error { color: #f44747; }
+        .log-success { color: #4ec9b0; }
+        .log-callback { color: #c586c0; }
+
+        .callback-flow {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-line;
+        }
+
+        .indexed-db {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .indexed-db h4 { margin: 0 0 10px 0; color: #2e7d32; }
+        .indexed-db-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .indexed-db-item.disabled {
+            background: #ffebee;
+            opacity: 0.6;
+        }
+        .indexed-db-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+        }
+
+        /* 테스트 제어판 */
+        .test-panel {
+            background: #fff3e0;
+            border: 2px solid #ff9800;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .test-panel h4 { margin: 0 0 15px 0; color: #e65100; }
+        .test-scenario {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 4px solid #2196f3;
+        }
+        .test-scenario.scenario-2 { border-left-color: #9c27b0; }
+        .test-scenario.scenario-3 { border-left-color: #f44336; }
+        .test-scenario h5 { margin: 0 0 8px 0; }
+        .test-scenario p { margin: 0 0 10px 0; color: #666; font-size: 13px; }
+        .test-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        .test-controls label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+        }
+        .test-controls select, .test-controls input[type="number"] {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #4caf50;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        /* 사용자 입력 모달 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal.show { display: flex; }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+        }
+        .modal-content h3 { margin-top: 0; }
+        .modal-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .modal-option {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .modal-option:hover { border-color: #2196f3; background: #e3f2fd; }
+        .modal-option.selected { border-color: #2196f3; background: #e3f2fd; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket PoC - Phase 3: 콜백 패턴</h1>
+    <p style="color: #666; margin-top: -10px;">서버가 클라이언트에 데이터를 요청하고 응답을 기다리는 패턴 검증 (Server → Client 요청 후 Client → Server 응답)</p>
+
+    <!-- 연결 상태 -->
+    <div class="section">
+        <h3>연결 상태</h3>
+        <div id="status" class="status disconnected">연결 안됨</div>
+        <div class="controls" style="margin-top: 10px;">
+            <button class="btn-success" onclick="connectWithToken()">JWT 발급 & 연결</button>
+            <button id="disconnectBtn" class="btn-secondary" onclick="disconnect()" disabled>연결 해제</button>
+        </div>
+    </div>
+
+    <!-- 3-1. One-Time Token 테스트 -->
+    <div class="section">
+        <h3>3-1. One-Time Token 테스트</h3>
+        <p style="color: #666; font-size: 13px; margin-top: -5px;">서버가 발급한 requestId의 발급/매칭 검증</p>
+        <div class="test-panel" style="background: #fff3e0; border-color: #ff9800;">
+            <div class="test-controls" style="flex-wrap: wrap; gap: 10px;">
+                <button class="btn-primary" onclick="runTokenTest('normal')" id="tokenTestNormalBtn" disabled>정상 매칭</button>
+                <button class="btn-danger" onclick="runTokenTest('invalid')" id="tokenTestInvalidBtn" disabled>잘못된 토큰</button>
+                <button class="btn-danger" onclick="runTokenTest('duplicate')" id="tokenTestDuplicateBtn" disabled>중복 사용</button>
+            </div>
+            <div style="margin-top: 15px; padding: 10px; background: #fffde7; border-radius: 4px; font-size: 12px;">
+                <strong>테스트 방법:</strong>
+                <ul style="margin: 5px 0 0 20px; padding: 0;">
+                    <li><b>정상 매칭</b>: 서버가 발급한 requestId로 응답 → 성공</li>
+                    <li><b>잘못된 토큰</b>: 존재하지 않는 requestId로 응답 → 실패</li>
+                    <li><b>중복 사용</b>: 같은 requestId로 두 번 응답 → 두 번째 실패</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3-2. 콜백 패턴 시나리오 -->
+    <div class="section">
+        <h3>3-2. 콜백 패턴 시나리오</h3>
+        <p style="color: #666; font-size: 13px; margin-top: -5px;">콜백 흐름별 동작 검증</p>
+        <div class="test-panel">
+            <!-- 시나리오 1: 기본 콜백 흐름 -->
+            <div class="test-scenario">
+                <h5>시나리오 1: 기본 콜백 흐름</h5>
+                <p style="font-size: 12px; line-height: 1.6;">
+                    query<span style="color: #1976d2;">(C→S)</span> →
+                    request_available_data<span style="color: #d32f2f;">(S→C)</span> →
+                    available_data<span style="color: #1976d2;">(C→S)</span> →
+                    request_api<span style="color: #d32f2f;">(S→C)</span> →
+                    api_result<span style="color: #1976d2;">(C→S)</span> →
+                    response<span style="color: #d32f2f;">(S→C)</span>
+                </p>
+                <div class="test-controls">
+                    <label title="서버 요청에 응답하기까지 걸리는 시간">
+                        응답 지연:
+                        <input type="number" id="responseDelay" value="300" min="0" max="5000" step="100" style="width: 80px;"> ms
+                    </label>
+                    <label class="toggle-switch" title="OFF 시 서버 요청에 응답하지 않음 (타임아웃 발생)">
+                        <input type="checkbox" id="autoResponseEnabled" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span style="font-size: 13px;">자동 응답 <span style="color: #999; font-size: 11px;">(OFF: 서버 요청 무시)</span></span>
+                </div>
+                <button class="btn-primary" onclick="runScenario1()" id="scenario1Btn" disabled>시나리오 1 실행</button>
+            </div>
+
+            <!-- 시나리오 2: Clarification 테스트 -->
+            <div class="test-scenario scenario-2">
+                <h5>시나리오 2: Clarification (사용자 입력 요청)</h5>
+                <p style="font-size: 12px; line-height: 1.6;">
+                    query<span style="color: #1976d2;">(C→S)</span> →
+                    clarification_request<span style="color: #d32f2f;">(S→C)</span> →
+                    사용자 선택 →
+                    human_response<span style="color: #1976d2;">(C→S)</span> →
+                    response<span style="color: #d32f2f;">(S→C)</span>
+                </p>
+                <button class="btn-warning" onclick="runScenario2()" id="scenario2Btn" disabled>시나리오 2 실행</button>
+            </div>
+
+            <!-- 시나리오 3: 타임아웃 테스트 -->
+            <div class="test-scenario scenario-3">
+                <h5>시나리오 3: 타임아웃 테스트</h5>
+                <p>응답 지연으로 서버 타임아웃 발생 확인 (서버 타임아웃: 10초)</p>
+                <button class="btn-danger" onclick="runScenario3()" id="scenario3Btn" disabled>시나리오 3 실행 (15초 지연)</button>
+                <button class="btn-secondary" onclick="restoreAndReset()" style="margin-left: 10px;">설정 복구</button>
+            </div>
+
+            <!-- 시나리오 4: 기타 에러 케이스 -->
+            <div class="test-scenario" style="border-left-color: #607d8b;">
+                <h5>시나리오 4: 기타 에러 케이스</h5>
+                <div class="test-controls" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                    <div>
+                        <button class="btn-secondary" onclick="runScenario4a()" id="scenario4aBtn" disabled>4-A: 응답 없음</button>
+                        <span style="font-size: 12px; color: #666; margin-left: 8px;">클라이언트 멈춤/오류 상황</span>
+                    </div>
+                    <div>
+                        <button class="btn-secondary" onclick="runScenario4b()" id="scenario4bBtn" disabled>4-B: 빈 데이터</button>
+                        <span style="font-size: 12px; color: #666; margin-left: 8px;">캐시 없음/첫 방문 상황</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mock IndexedDB -->
+    <div class="section">
+        <h3>Mock IndexedDB (클라이언트 저장소)</h3>
+        <div class="indexed-db">
+            <h4>저장된 데이터 목록</h4>
+            <div class="test-controls" style="margin-bottom: 10px;">
+                <button class="btn-secondary" onclick="toggleAllData(true)" style="padding: 5px 10px; font-size: 12px;">전체 활성화</button>
+                <button class="btn-secondary" onclick="toggleAllData(false)" style="padding: 5px 10px; font-size: 12px;">전체 비활성화</button>
+            </div>
+            <div id="indexedDbList"></div>
+        </div>
+    </div>
+
+    <!-- 콜백 흐름 -->
+    <div class="section">
+        <h3>콜백 흐름 시각화</h3>
+        <div class="callback-flow" id="callbackFlow">
+콜백 흐름이 여기에 표시됩니다...
+
+예상 흐름:
+1. Client → Server: query
+2. Server → Client: request_available_data (requestId 포함)
+3. Client → Server: available_data (requestId 포함)
+4. Server → Client: request_api (dataKey, requestId 포함)
+5. Client → Server: api_result (requestId 포함)
+6. Server → Client: response
+        </div>
+    </div>
+
+    <!-- 통신 로그 -->
+    <div class="section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>통신 로그</h3>
+            <button class="btn-secondary" onclick="clearLog()" style="padding: 5px 10px; font-size: 12px;">로그 지우기</button>
+        </div>
+        <div id="log"></div>
+    </div>
+
+    <!-- 사용자 입력 모달 (clarification_request용) -->
+    <div class="modal" id="clarificationModal">
+        <div class="modal-content">
+            <h3 id="modalQuestion">질문</h3>
+            <div class="modal-options" id="modalOptions"></div>
+            <div class="input-group" id="modalTextInput" style="display: none;">
+                <input type="text" id="modalTextValue" placeholder="답변을 입력하세요...">
+            </div>
+            <div class="controls">
+                <button class="btn-primary" onclick="submitClarification()">응답</button>
+                <button class="btn-secondary" onclick="cancelClarification()">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_URL = 'http://localhost:8000';
+        const WS_URL = 'ws://localhost:8000/ws/copilot';
+
+        let ws = null;
+        let currentToken = null;
+        let pendingClarification = null;  // { requestId, resolve, reject }
+        let callbackSteps = [];
+
+        // Mock IndexedDB 데이터
+        const mockIndexedDB = {
+            "costSummary": {
+                description: "월별 비용 요약",
+                size: 1024,
+                enabled: true,
+                data: {
+                    totalCost: "$45,678",
+                    change: "+15%",
+                    period: "2024-01",
+                    topServices: ["EC2", "Lambda", "S3"]
+                }
+            },
+            "costTrend": {
+                description: "비용 추세 데이터",
+                size: 52000,
+                enabled: true,
+                data: {
+                    months: ["2024-01", "2024-02", "2024-03"],
+                    values: [42000, 45000, 45678]
+                }
+            },
+            "resourceList": {
+                description: "리소스 목록",
+                size: 2048000,
+                enabled: true,
+                data: {
+                    totalResources: 1523,
+                    byType: { EC2: 45, Lambda: 120, S3: 30 }
+                }
+            }
+        };
+
+        // 테스트 설정
+        let testConfig = {
+            autoResponseEnabled: true,
+            responseDelay: 300,
+            savedResponseDelay: 300,
+            savedAutoResponse: true
+        };
+
+        // UI 요소
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const callbackFlowEl = document.getElementById('callbackFlow');
+        const scenario1Btn = document.getElementById('scenario1Btn');
+        const scenario2Btn = document.getElementById('scenario2Btn');
+        const scenario3Btn = document.getElementById('scenario3Btn');
+        const scenario4aBtn = document.getElementById('scenario4aBtn');
+        const scenario4bBtn = document.getElementById('scenario4bBtn');
+        const tokenTestNormalBtn = document.getElementById('tokenTestNormalBtn');
+        const tokenTestInvalidBtn = document.getElementById('tokenTestInvalidBtn');
+        const tokenTestDuplicateBtn = document.getElementById('tokenTestDuplicateBtn');
+        const autoResponseCheckbox = document.getElementById('autoResponseEnabled');
+        const responseDelayInput = document.getElementById('responseDelay');
+
+        // One-Time Token 테스트 설정
+        let tokenTestMode = 'normal';  // 'normal', 'invalid', 'duplicate'
+        let lastUsedRequestId = null;  // 중복 테스트용
+
+        // 초기화
+        function init() {
+            renderIndexedDB();
+
+            // 테스트 설정 이벤트 리스너
+            autoResponseCheckbox.addEventListener('change', (e) => {
+                testConfig.autoResponseEnabled = e.target.checked;
+                addLog('info', `자동 응답: ${e.target.checked ? '활성화' : '비활성화'}`);
+            });
+
+            responseDelayInput.addEventListener('change', (e) => {
+                testConfig.responseDelay = parseInt(e.target.value) || 300;
+                addLog('info', `응답 지연: ${testConfig.responseDelay}ms`);
+            });
+        }
+
+        function renderIndexedDB() {
+            const list = document.getElementById('indexedDbList');
+            list.innerHTML = Object.entries(mockIndexedDB).map(([key, value]) => `
+                <div class="indexed-db-item ${value.enabled ? '' : 'disabled'}">
+                    <label style="display: flex; align-items: center; flex: 1;">
+                        <input type="checkbox" ${value.enabled ? 'checked' : ''} onchange="toggleDataItem('${key}', this.checked)">
+                        <strong>${key}</strong>&nbsp;- ${value.description}
+                    </label>
+                    <span>${(value.size / 1024).toFixed(1)} KB</span>
+                </div>
+            `).join('');
+        }
+
+        function toggleDataItem(key, enabled) {
+            mockIndexedDB[key].enabled = enabled;
+            renderIndexedDB();
+            addLog('info', `데이터 '${key}': ${enabled ? '활성화' : '비활성화'}`);
+        }
+
+        function toggleAllData(enabled) {
+            Object.keys(mockIndexedDB).forEach(key => {
+                mockIndexedDB[key].enabled = enabled;
+            });
+            renderIndexedDB();
+            addLog('info', `모든 데이터: ${enabled ? '활성화' : '비활성화'}`);
+        }
+
+        function updateStatus(state, message) {
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = message;
+            const isConnected = state === 'connected';
+            disconnectBtn.disabled = !isConnected;
+            scenario1Btn.disabled = !isConnected;
+            scenario2Btn.disabled = !isConnected;
+            scenario3Btn.disabled = !isConnected;
+            scenario4aBtn.disabled = !isConnected;
+            scenario4bBtn.disabled = !isConnected;
+            tokenTestNormalBtn.disabled = !isConnected;
+            tokenTestInvalidBtn.disabled = !isConnected;
+            tokenTestDuplicateBtn.disabled = !isConnected;
+        }
+
+        // ========================================
+        // One-Time Token 테스트
+        // ========================================
+
+        function runTokenTest(mode) {
+            tokenTestMode = mode;
+            lastUsedRequestId = null;
+
+            const modeNames = {
+                'normal': '정상 매칭',
+                'invalid': '잘못된 토큰',
+                'duplicate': '중복 사용'
+            };
+
+            addLog('info', `=== One-Time Token 테스트: ${modeNames[mode]} ===`);
+            addLog('info', `테스트 모드: ${mode}`);
+
+            sendQuery(`토큰 테스트 (${mode})`);
+        }
+
+        // ========================================
+        // 테스트 시나리오 함수
+        // ========================================
+
+        // 시나리오 1: 기본 콜백 흐름
+        function runScenario1() {
+            addLog('info', '=== 시나리오 1: 기본 콜백 흐름 시작 ===');
+
+            // 설정 확인
+            testConfig.autoResponseEnabled = autoResponseCheckbox.checked;
+            testConfig.responseDelay = parseInt(responseDelayInput.value) || 300;
+
+            addLog('info', `설정 - 자동응답: ${testConfig.autoResponseEnabled}, 지연: ${testConfig.responseDelay}ms`);
+
+            // 모든 데이터 활성화 확인
+            const enabledCount = Object.values(mockIndexedDB).filter(v => v.enabled).length;
+            if (enabledCount === 0) {
+                addLog('error', '활성화된 데이터가 없습니다. 데이터를 활성화해주세요.');
+                return;
+            }
+
+            sendQuery('비용 분석해줘');
+        }
+
+        // 시나리오 2: Clarification 테스트
+        function runScenario2() {
+            addLog('info', '=== 시나리오 2: Clarification 테스트 시작 ===');
+
+            // 자동 응답 활성화 확인
+            if (!testConfig.autoResponseEnabled) {
+                testConfig.autoResponseEnabled = true;
+                autoResponseCheckbox.checked = true;
+                addLog('info', '자동 응답 활성화됨');
+            }
+
+            sendQuery('어떤 데이터를 선택할까요?');
+        }
+
+        // 시나리오 3: 타임아웃 테스트 (응답 지연)
+        function runScenario3() {
+            addLog('info', '=== 시나리오 3: 타임아웃 테스트 시작 ===');
+
+            // 현재 설정 백업
+            testConfig.savedAutoResponse = testConfig.autoResponseEnabled;
+            testConfig.savedResponseDelay = testConfig.responseDelay;
+
+            // 15초 지연 설정
+            testConfig.responseDelay = 15000;
+            responseDelayInput.value = '15000';
+            addLog('info', '응답 지연: 15초 (서버 타임아웃 10초 초과)');
+            addLog('info', '10초 후 타임아웃 발생 예정...');
+
+            sendQuery('타임아웃 테스트');
+
+            // 테스트 후 설정 복구 예약
+            setTimeout(() => {
+                restoreTestConfig();
+            }, 16000);
+        }
+
+        // 시나리오 4-A: 응답 없음 (클라이언트 멈춤/오류)
+        function runScenario4a() {
+            addLog('info', '=== 시나리오 4-A: 응답 없음 테스트 시작 ===');
+
+            // 현재 설정 백업
+            testConfig.savedAutoResponse = testConfig.autoResponseEnabled;
+            testConfig.savedResponseDelay = testConfig.responseDelay;
+
+            // 자동 응답 비활성화
+            testConfig.autoResponseEnabled = false;
+            autoResponseCheckbox.checked = false;
+            addLog('info', '자동 응답 비활성화 (클라이언트가 응답하지 않음)');
+            addLog('info', '10초 후 타임아웃 발생 예정...');
+
+            sendQuery('응답 없음 테스트');
+
+            // 테스트 후 설정 복구 예약
+            setTimeout(() => {
+                restoreTestConfig();
+            }, 12000);
+        }
+
+        // 시나리오 4-B: 빈 데이터 (캐시 없음)
+        function runScenario4b() {
+            addLog('info', '=== 시나리오 4-B: 빈 데이터 테스트 시작 ===');
+
+            // 모든 데이터 비활성화
+            toggleAllData(false);
+            addLog('info', '모든 데이터 비활성화 (캐시 없음 상황 시뮬레이션)');
+
+            sendQuery('빈 데이터 테스트');
+        }
+
+        function restoreTestConfig() {
+            testConfig.autoResponseEnabled = testConfig.savedAutoResponse;
+            testConfig.responseDelay = testConfig.savedResponseDelay;
+            autoResponseCheckbox.checked = testConfig.savedAutoResponse;
+            responseDelayInput.value = testConfig.savedResponseDelay.toString();
+            addLog('info', '테스트 설정이 복구되었습니다.');
+        }
+
+        function restoreAndReset() {
+            // 기본값으로 복구
+            testConfig.autoResponseEnabled = true;
+            testConfig.responseDelay = 300;
+            testConfig.savedAutoResponse = true;
+            testConfig.savedResponseDelay = 300;
+
+            autoResponseCheckbox.checked = true;
+            responseDelayInput.value = '300';
+
+            // 모든 데이터 활성화
+            toggleAllData(true);
+
+            addLog('success', '모든 설정이 기본값으로 복구되었습니다.');
+        }
+
+        function addLog(type, message) {
+            const time = new Date().toLocaleTimeString('ko-KR');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            let typeClass = 'log-info';
+            let prefix = '';
+            if (type === 'send') { typeClass = 'log-send'; prefix = '>>> '; }
+            if (type === 'receive') { typeClass = 'log-receive'; prefix = '<<< '; }
+            if (type === 'error') { typeClass = 'log-error'; prefix = '!!! '; }
+            if (type === 'success') { typeClass = 'log-success'; prefix = 'OK '; }
+            if (type === 'callback') { typeClass = 'log-callback'; prefix = '~~~ '; }
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="${typeClass}">${prefix}${escapeHtml(message)}</span>`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearLog() {
+            logEl.innerHTML = '';
+            callbackSteps = [];
+            updateCallbackFlow();
+        }
+
+        function addCallbackStep(step) {
+            callbackSteps.push(step);
+            updateCallbackFlow();
+        }
+
+        function updateCallbackFlow() {
+            if (callbackSteps.length === 0) {
+                callbackFlowEl.textContent = '콜백 흐름이 여기에 표시됩니다...';
+                return;
+            }
+            callbackFlowEl.textContent = callbackSteps.join('\n');
+        }
+
+        // JWT 발급 & 연결
+        async function connectWithToken() {
+            try {
+                addLog('info', 'JWT 발급 요청...');
+                const response = await fetch(`${SERVER_URL}/api/auth/token?username=test@example.com&name=테스트사용자`, { method: 'POST' });
+                const data = await response.json();
+                currentToken = data.access_token;
+                addLog('success', 'JWT 발급 성공');
+                connect();
+            } catch (error) {
+                addLog('error', `JWT 발급 실패: ${error.message}`);
+            }
+        }
+
+        function connect() {
+            updateStatus('connecting', '연결 중...');
+            const url = `${WS_URL}?token=${currentToken}`;
+            ws = new WebSocket(url);
+
+            ws.onopen = () => addLog('success', 'WebSocket 연결 성공');
+            ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
+            ws.onerror = () => addLog('error', 'WebSocket 에러');
+            ws.onclose = (event) => {
+                updateStatus('disconnected', '연결 안됨');
+                addLog('info', `연결 종료 (code: ${event.code})`);
+                ws = null;
+            };
+        }
+
+        function disconnect() {
+            if (ws) ws.close();
+        }
+
+        // 메시지 처리
+        function handleMessage(data) {
+            const type = data.type;
+            addLog('receive', `${type}: ${JSON.stringify(data).substring(0, 80)}...`);
+
+            switch (type) {
+                case 'connected':
+                    updateStatus('connected', '연결됨');
+                    addLog('success', `인증 완료: ${data.user?.name}`);
+                    break;
+
+                case 'request_available_data':
+                    handleRequestAvailableData(data);
+                    break;
+
+                case 'request_api':
+                    handleRequestApi(data);
+                    break;
+
+                case 'clarification_request':
+                    handleClarificationRequest(data);
+                    break;
+
+                case 'response':
+                    addCallbackStep(`6. Server → Client: response`);
+                    const answer = data.answer || '';
+                    if (answer.includes('타임아웃')) {
+                        addLog('error', '최종 응답: 타임아웃 발생!');
+                    } else if (answer.includes('오류')) {
+                        addLog('error', '최종 응답: 오류 발생');
+                    } else {
+                        addLog('success', '최종 응답 수신 (성공)');
+                    }
+                    break;
+
+                case 'ping':
+                    sendMessage({ type: 'pong' });
+                    break;
+
+                case 'error':
+                    addLog('error', `에러 [${data.code}]: ${data.message}`);
+                    break;
+            }
+        }
+
+        // 콜백 응답 처리
+        function handleRequestAvailableData(data) {
+            const requestId = data.requestId;
+            const timeout = data.timeout || 10000;
+
+            // 토큰 발급 로그 (명확히 표시)
+            addLog('callback', `━━━ One-Time Token 발급 ━━━`);
+            addLog('callback', `Token: ${requestId}`);
+            addLog('callback', `━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+            addCallbackStep(`2. Server → Client: request_available_data`);
+            addCallbackStep(`   Token 발급: ${requestId}`);
+
+            // 자동 응답이 비활성화된 경우
+            if (!testConfig.autoResponseEnabled) {
+                addLog('info', `⚠️ 자동 응답 비활성화 - 응답을 보내지 않습니다 (${timeout}ms 후 타임아웃 예상)`);
+                return;
+            }
+
+            // Mock IndexedDB 목록 응답 (활성화된 데이터만)
+            const availableData = Object.entries(mockIndexedDB)
+                .filter(([key, value]) => value.enabled)
+                .map(([key, value]) => ({
+                    key,
+                    description: value.description,
+                    size: value.size
+                }));
+
+            const delay = testConfig.responseDelay;
+
+            setTimeout(() => {
+                // 토큰 테스트 모드에 따라 응답 requestId 결정
+                let responseRequestId = requestId;
+
+                if (tokenTestMode === 'invalid') {
+                    responseRequestId = 'invalid-token-12345-xyz';
+                    addLog('info', `🔑 잘못된 토큰 테스트: ${responseRequestId}`);
+                } else if (tokenTestMode === 'duplicate') {
+                    if (lastUsedRequestId === requestId) {
+                        addLog('info', `🔑 중복 사용 테스트: 같은 토큰으로 재전송`);
+                    } else {
+                        lastUsedRequestId = requestId;
+                        // 첫 번째는 정상 전송, 바로 다음에 중복 전송
+                        setTimeout(() => {
+                            addLog('info', `🔑 중복 사용 테스트: 같은 토큰으로 두 번째 전송`);
+                            sendMessage({
+                                type: 'available_data',
+                                requestId: requestId,
+                                data: availableData
+                            });
+                            addLog('callback', `available_data 중복 전송 (Token: ${requestId.substring(0, 20)}...)`);
+                        }, 100);
+                    }
+                }
+
+                addCallbackStep(`3. Client → Server: available_data`);
+                addCallbackStep(`   Token 사용: ${responseRequestId.substring(0, 25)}...`);
+
+                sendMessage({
+                    type: 'available_data',
+                    requestId: responseRequestId,
+                    data: availableData
+                });
+                addLog('callback', `available_data 응답 (Token: ${responseRequestId.substring(0, 20)}...)`);
+
+                // 테스트 모드 초기화
+                if (tokenTestMode !== 'normal') {
+                    tokenTestMode = 'normal';
+                }
+            }, delay);
+        }
+
+        function handleRequestApi(data) {
+            const requestId = data.requestId;
+            const dataKey = data.dataKey;
+            const timeout = data.timeout || 60000;
+
+            // 토큰 발급 로그
+            addLog('callback', `━━━ One-Time Token 발급 ━━━`);
+            addLog('callback', `Token: ${requestId}`);
+            addLog('callback', `━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+            addCallbackStep(`4. Server → Client: request_api (dataKey: ${dataKey})`);
+            addCallbackStep(`   Token 발급: ${requestId}`);
+
+            // 자동 응답이 비활성화된 경우
+            if (!testConfig.autoResponseEnabled) {
+                addLog('info', `⚠️ 자동 응답 비활성화 - 응답을 보내지 않습니다 (${timeout}ms 후 타임아웃 예상)`);
+                return;
+            }
+
+            // Mock IndexedDB에서 데이터 조회 (활성화된 데이터만)
+            const storedData = mockIndexedDB[dataKey];
+            const isEnabled = storedData && storedData.enabled;
+
+            const delay = testConfig.responseDelay;
+
+            setTimeout(() => {
+                addCallbackStep(`5. Client → Server: api_result`);
+                addCallbackStep(`   Token 사용: ${requestId.substring(0, 25)}...`);
+
+                if (isEnabled) {
+                    sendMessage({
+                        type: 'api_result',
+                        requestId: requestId,
+                        success: true,
+                        data: storedData.data
+                    });
+                    addLog('callback', `api_result 응답 (Token: ${requestId.substring(0, 20)}..., success)`);
+                } else {
+                    sendMessage({
+                        type: 'api_result',
+                        requestId: requestId,
+                        success: false,
+                        error: { code: 'NOT_FOUND', message: `데이터 없음 또는 비활성화: ${dataKey}` }
+                    });
+                    addLog('callback', `api_result 응답 (Token: ${requestId.substring(0, 20)}..., error)`);
+                }
+            }, delay);
+        }
+
+        function handleClarificationRequest(data) {
+            const requestId = data.requestId;
+
+            // 토큰 발급 로그
+            addLog('callback', `━━━ One-Time Token 발급 ━━━`);
+            addLog('callback', `Token: ${requestId}`);
+            addLog('callback', `━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+            addCallbackStep(`*. Server → Client: clarification_request`);
+            addCallbackStep(`   Token 발급: ${requestId}`);
+            addLog('callback', `사용자 입력 요청: ${data.question}`);
+
+            // 모달 표시
+            pendingClarification = { requestId };
+            showClarificationModal(data);
+        }
+
+        function showClarificationModal(data) {
+            const modal = document.getElementById('clarificationModal');
+            const questionEl = document.getElementById('modalQuestion');
+            const optionsEl = document.getElementById('modalOptions');
+            const textInputEl = document.getElementById('modalTextInput');
+
+            questionEl.textContent = data.question;
+
+            if (data.options && data.options.length > 0) {
+                optionsEl.innerHTML = data.options.map(opt => `
+                    <div class="modal-option" onclick="selectOption(this, '${opt}')">${opt}</div>
+                `).join('');
+                optionsEl.style.display = 'flex';
+                textInputEl.style.display = 'none';
+            } else {
+                optionsEl.style.display = 'none';
+                textInputEl.style.display = 'flex';
+            }
+
+            modal.classList.add('show');
+        }
+
+        function selectOption(el, value) {
+            document.querySelectorAll('.modal-option').forEach(opt => opt.classList.remove('selected'));
+            el.classList.add('selected');
+            pendingClarification.selectedOption = value;
+        }
+
+        function submitClarification() {
+            if (!pendingClarification) return;
+
+            const textValue = document.getElementById('modalTextValue').value;
+            const response = pendingClarification.selectedOption || textValue;
+            const requestId = pendingClarification.requestId;
+
+            addCallbackStep(`*. Client → Server: human_response (${response})`);
+            addCallbackStep(`   Token 사용: ${requestId.substring(0, 25)}...`);
+
+            sendMessage({
+                type: 'human_response',
+                requestId: requestId,
+                response: response,
+                selectedOption: pendingClarification.selectedOption
+            });
+            addLog('callback', `human_response 응답 (Token: ${requestId.substring(0, 20)}..., 응답: ${response})`);
+
+            closeClarificationModal();
+        }
+
+        function cancelClarification() {
+            closeClarificationModal();
+        }
+
+        function closeClarificationModal() {
+            document.getElementById('clarificationModal').classList.remove('show');
+            pendingClarification = null;
+        }
+
+        // 메시지 전송
+        function sendMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+                if (!['pong', 'available_data', 'api_result', 'human_response'].includes(data.type)) {
+                    addLog('send', `${data.type}`);
+                }
+            }
+        }
+
+        function sendQuery(query) {
+            if (!query) return;
+
+            callbackSteps = [];
+            addCallbackStep(`1. Client → Server: query ("${query.substring(0, 30)}...")`);
+
+            sendMessage({
+                type: 'query',
+                query: query,
+                domContext: '{}',
+                page: { url: window.location.href, title: document.title }
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>

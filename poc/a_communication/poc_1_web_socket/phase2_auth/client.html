@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket PoC - Phase 2 (JWT 인증)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        h3 { margin-top: 0; color: #555; }
+
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .status.disconnected { background: #ffebee; color: #c62828; }
+        .status.connecting { background: #fff3e0; color: #ef6c00; }
+        .status.connected { background: #e8f5e9; color: #2e7d32; }
+
+        .token-display {
+            background: #263238;
+            color: #aed581;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 11px;
+            word-break: break-all;
+            margin: 10px 0;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .user-info {
+            background: #e3f2fd;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .user-info-item {
+            display: flex;
+            margin: 5px 0;
+        }
+        .user-info-label {
+            font-weight: bold;
+            width: 100px;
+            color: #1565c0;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: #2196f3; color: white; }
+        .btn-success { background: #4caf50; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn-warning { background: #ff9800; color: white; }
+        .btn-secondary { background: #9e9e9e; color: white; }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        #log {
+            height: 250px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        .log-entry {
+            margin-bottom: 4px;
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+        .log-time { color: #6a9955; }
+        .log-send { color: #569cd6; }
+        .log-receive { color: #ce9178; }
+        .log-info { color: #dcdcaa; }
+        .log-error { color: #f44747; }
+        .log-success { color: #4ec9b0; }
+
+        .test-scenarios {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+        }
+        .scenario-btn {
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+        }
+        .scenario-btn small {
+            display: block;
+            margin-top: 5px;
+            opacity: 0.8;
+            font-size: 11px;
+        }
+
+        .jwt-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        @media (max-width: 600px) {
+            .jwt-section { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket PoC - Phase 2: JWT 인증</h1>
+
+    <!-- 연결 상태 -->
+    <div class="section">
+        <h3>연결 상태</h3>
+        <div id="status" class="status disconnected">연결 안됨</div>
+        <div id="userInfo" class="user-info" style="display: none;">
+            <div class="user-info-item"><span class="user-info-label">ID:</span><span id="userId">-</span></div>
+            <div class="user-info-item"><span class="user-info-label">이름:</span><span id="userName">-</span></div>
+            <div class="user-info-item"><span class="user-info-label">이메일:</span><span id="userEmail">-</span></div>
+            <div class="user-info-item"><span class="user-info-label">역할:</span><span id="userRoles">-</span></div>
+        </div>
+    </div>
+
+    <!-- JWT 토큰 관리 -->
+    <div class="section">
+        <h3>1. JWT 토큰 관리</h3>
+        <div class="jwt-section">
+            <div>
+                <div class="input-group">
+                    <input type="text" id="usernameInput" placeholder="이메일" value="test@example.com">
+                </div>
+                <div class="input-group">
+                    <input type="text" id="nameInput" placeholder="이름" value="테스트 사용자">
+                </div>
+                <div class="controls">
+                    <button class="btn-primary" onclick="requestToken()">JWT 발급</button>
+                    <button class="btn-warning" onclick="requestExpiredToken()">만료된 JWT 발급</button>
+                </div>
+            </div>
+            <div>
+                <div class="token-display" id="tokenDisplay">JWT 토큰이 없습니다. 먼저 토큰을 발급하세요.</div>
+                <div class="controls">
+                    <button class="btn-secondary" onclick="clearToken()">토큰 지우기</button>
+                    <button class="btn-secondary" onclick="decodeToken()">JWT 디코딩</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 연결 테스트 -->
+    <div class="section">
+        <h3>2. 연결 테스트</h3>
+        <div class="controls">
+            <button id="connectBtn" class="btn-success" onclick="connect()">JWT로 연결</button>
+            <button id="connectNoTokenBtn" class="btn-danger" onclick="connectWithoutToken()">토큰 없이 연결</button>
+            <button id="connectBadTokenBtn" class="btn-warning" onclick="connectWithBadToken()">잘못된 토큰</button>
+            <button id="disconnectBtn" class="btn-secondary" onclick="disconnect()" disabled>연결 해제</button>
+        </div>
+    </div>
+
+    <!-- 메시지 전송 -->
+    <div class="section">
+        <h3>3. 메시지 전송</h3>
+        <div class="input-group">
+            <input type="text" id="queryInput" placeholder="질문을 입력하세요..." disabled>
+            <button id="sendBtn" class="btn-primary" onclick="sendQuery()" disabled>전송</button>
+        </div>
+    </div>
+
+    <!-- 테스트 시나리오 -->
+    <div class="section">
+        <h3>4. 테스트 시나리오 (원클릭)</h3>
+        <div class="test-scenarios">
+            <button class="scenario-btn btn-success" onclick="runScenario('valid')">
+                ✅ 유효한 JWT
+                <small>JWT 발급 → 연결 성공</small>
+            </button>
+            <button class="scenario-btn btn-danger" onclick="runScenario('noToken')">
+                ❌ 토큰 없음
+                <small>1008 코드로 거부</small>
+            </button>
+            <button class="scenario-btn btn-warning" onclick="runScenario('badToken')">
+                ❌ 잘못된 토큰
+                <small>4001 코드로 거부</small>
+            </button>
+            <button class="scenario-btn btn-warning" onclick="runScenario('expiredToken')">
+                ❌ 만료된 JWT
+                <small>4001 코드로 거부</small>
+            </button>
+        </div>
+    </div>
+
+    <!-- 통신 로그 -->
+    <div class="section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>통신 로그</h3>
+            <button class="btn-secondary" onclick="clearLog()" style="padding: 5px 10px; font-size: 12px;">로그 지우기</button>
+        </div>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        const SERVER_URL = 'http://localhost:8000';
+        const WS_URL = 'ws://localhost:8000/ws/copilot';
+
+        let ws = null;
+        let currentToken = null;
+
+        // UI 요소
+        const statusEl = document.getElementById('status');
+        const userInfoEl = document.getElementById('userInfo');
+        const logEl = document.getElementById('log');
+        const tokenDisplay = document.getElementById('tokenDisplay');
+        const queryInput = document.getElementById('queryInput');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+
+        // 상태 업데이트
+        function updateStatus(state, message) {
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = message;
+
+            const isConnected = state === 'connected';
+            disconnectBtn.disabled = !isConnected;
+            sendBtn.disabled = !isConnected;
+            queryInput.disabled = !isConnected;
+
+            if (!isConnected) {
+                userInfoEl.style.display = 'none';
+            }
+        }
+
+        // 사용자 정보 표시
+        function showUserInfo(user) {
+            document.getElementById('userId').textContent = user.id?.substring(0, 8) + '...';
+            document.getElementById('userName').textContent = user.name;
+            document.getElementById('userEmail').textContent = user.username;
+            document.getElementById('userRoles').textContent = user.roles?.slice(0, 2).join(', ') || '-';
+            userInfoEl.style.display = 'block';
+        }
+
+        // 로그 추가
+        function addLog(type, message) {
+            const time = new Date().toLocaleTimeString('ko-KR');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            let typeClass = 'log-info';
+            let prefix = '';
+            if (type === 'send') { typeClass = 'log-send'; prefix = '>>> '; }
+            if (type === 'receive') { typeClass = 'log-receive'; prefix = '<<< '; }
+            if (type === 'error') { typeClass = 'log-error'; prefix = '!!! '; }
+            if (type === 'success') { typeClass = 'log-success'; prefix = 'OK '; }
+
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="${typeClass}">${prefix}${escapeHtml(message)}</span>`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearLog() {
+            logEl.innerHTML = '';
+        }
+
+        // JWT 토큰 발급
+        async function requestToken() {
+            const username = document.getElementById('usernameInput').value || 'test@example.com';
+            const name = document.getElementById('nameInput').value || '테스트 사용자';
+            addLog('info', `JWT 발급 요청: ${username}`);
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/auth/token?username=${encodeURIComponent(username)}&name=${encodeURIComponent(name)}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                currentToken = data.access_token;
+                tokenDisplay.textContent = currentToken;
+                addLog('success', `JWT 발급 성공 (만료: ${data.expires_in}초)`);
+            } catch (error) {
+                addLog('error', `JWT 발급 실패: ${error.message}`);
+            }
+        }
+
+        // 만료된 토큰 발급
+        async function requestExpiredToken() {
+            const username = document.getElementById('usernameInput').value || 'test@example.com';
+            const name = document.getElementById('nameInput').value || '테스트 사용자';
+            addLog('info', `만료된 JWT 발급 요청`);
+
+            try {
+                const response = await fetch(`${SERVER_URL}/api/auth/token/expired?username=${encodeURIComponent(username)}&name=${encodeURIComponent(name)}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                currentToken = data.access_token;
+                tokenDisplay.textContent = currentToken;
+                addLog('info', `만료된 JWT 발급 완료 (연결 시 거부됨)`);
+            } catch (error) {
+                addLog('error', `JWT 발급 실패: ${error.message}`);
+            }
+        }
+
+        // 토큰 지우기
+        function clearToken() {
+            currentToken = null;
+            tokenDisplay.textContent = 'JWT 토큰이 없습니다. 먼저 토큰을 발급하세요.';
+            addLog('info', '토큰을 지웠습니다');
+        }
+
+        // JWT 디코딩 (payload 확인)
+        function decodeToken() {
+            if (!currentToken) {
+                addLog('error', '디코딩할 토큰이 없습니다');
+                return;
+            }
+
+            try {
+                const parts = currentToken.split('.');
+                if (parts.length !== 3) {
+                    addLog('error', '잘못된 JWT 형식');
+                    return;
+                }
+
+                const payload = JSON.parse(atob(parts[1]));
+                addLog('info', `JWT Payload: ${JSON.stringify(payload, null, 2)}`);
+
+                // 만료 시간 확인
+                const exp = new Date(payload.exp * 1000);
+                const now = new Date();
+                if (exp < now) {
+                    addLog('error', `토큰 만료됨: ${exp.toLocaleString()}`);
+                } else {
+                    addLog('success', `토큰 유효 (만료: ${exp.toLocaleString()})`);
+                }
+            } catch (error) {
+                addLog('error', `디코딩 실패: ${error.message}`);
+            }
+        }
+
+        // WebSocket 연결 (JWT 포함)
+        function connect() {
+            if (!currentToken) {
+                addLog('error', 'JWT가 없습니다. 먼저 토큰을 발급하세요.');
+                return;
+            }
+            connectWithToken(currentToken);
+        }
+
+        // WebSocket 연결 (토큰 없이)
+        function connectWithoutToken() {
+            addLog('info', '토큰 없이 연결 시도...');
+            connectWithToken(null);
+        }
+
+        // WebSocket 연결 (잘못된 토큰)
+        function connectWithBadToken() {
+            addLog('info', '잘못된 토큰으로 연결 시도...');
+            connectWithToken('invalid.jwt.token');
+        }
+
+        // WebSocket 연결 공통
+        function connectWithToken(token) {
+            updateStatus('connecting', '연결 중...');
+
+            const url = token ? `${WS_URL}?token=${token}` : WS_URL;
+            addLog('info', `WebSocket 연결: ${url.substring(0, 50)}...`);
+
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                addLog('success', 'WebSocket 연결 성공 (handshake 완료)');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+
+            ws.onerror = (error) => {
+                addLog('error', 'WebSocket 에러 발생');
+            };
+
+            ws.onclose = (event) => {
+                updateStatus('disconnected', '연결 안됨');
+
+                let reason = '';
+                if (event.code === 1008) {
+                    reason = '(1008: 토큰 없음 - Policy Violation)';
+                } else if (event.code === 4001) {
+                    reason = `(4001: JWT 검증 실패 - ${event.reason || '만료/무효'})`;
+                } else if (event.code === 1000) {
+                    reason = '(1000: 정상 종료)';
+                }
+
+                addLog('info', `연결 종료 - code: ${event.code} ${reason}`);
+                ws = null;
+            };
+        }
+
+        // 연결 해제
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        // 메시지 처리
+        function handleMessage(data) {
+            addLog('receive', `${data.type}: ${JSON.stringify(data).substring(0, 100)}...`);
+
+            switch (data.type) {
+                case 'connected':
+                    updateStatus('connected', '연결됨');
+                    if (data.user) {
+                        showUserInfo(data.user);
+                        addLog('success', `JWT 인증 완료! ${data.user.name} (${data.user.username})`);
+                    }
+                    break;
+
+                case 'response':
+                    addLog('info', `응답 수신`);
+                    break;
+
+                case 'ping':
+                    sendMessage({ type: 'pong' });
+                    addLog('info', 'ping -> pong');
+                    break;
+
+                case 'error':
+                    addLog('error', `에러 [${data.code}]: ${data.message}`);
+                    break;
+            }
+        }
+
+        // 메시지 전송
+        function sendMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+                if (data.type !== 'pong') {
+                    addLog('send', `${data.type}`);
+                }
+            }
+        }
+
+        // 질문 전송
+        function sendQuery() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            sendMessage({
+                type: 'query',
+                query: query,
+                domContext: '{}',
+                page: {
+                    url: window.location.href,
+                    title: document.title
+                }
+            });
+            queryInput.value = '';
+        }
+
+        // 엔터키 처리
+        queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendQuery();
+        });
+
+        // 테스트 시나리오 실행
+        async function runScenario(scenario) {
+            disconnect();
+            await new Promise(r => setTimeout(r, 300));
+
+            addLog('info', `========== 시나리오: ${scenario} ==========`);
+
+            switch (scenario) {
+                case 'valid':
+                    await requestToken();
+                    await new Promise(r => setTimeout(r, 200));
+                    connect();
+                    break;
+
+                case 'noToken':
+                    clearToken();
+                    connectWithoutToken();
+                    break;
+
+                case 'badToken':
+                    connectWithBadToken();
+                    break;
+
+                case 'expiredToken':
+                    await requestExpiredToken();
+                    await new Promise(r => setTimeout(r, 200));
+                    connect();
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>
