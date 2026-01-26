@@ -19,21 +19,14 @@ from src.models import IntegratedContext, RAGResult, SearchResult
 from src.rag_assistant.rag.reranker import Reranker
 from src.rag_assistant.rag.search import FAISSSearch
 from src.utils.secrets import get_open_ai_key
+from src.utils.token_logger import (
+    TokenTimer,
+    extract_usage_from_response,
+    log_token_usage,
+)
 
 logger = logging.getLogger(__name__)
 _format_client = AsyncOpenAI(api_key=get_open_ai_key())
-
-
-def _sanitize_text(text: str) -> str:
-    """UTF-8 인코딩이 불가능한 문자 제거"""
-    try:
-        # UTF-8로 인코딩 가능한지 테스트
-        text.encode('utf-8')
-        return text
-    except UnicodeEncodeError:
-        # surrogate 문자 등 제거
-        return text.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
-
 
 # ─────────────────────────────────────────────────────────────
 # Agent 정의
@@ -171,12 +164,25 @@ async def _coerce_rag_result(text: str) -> RAGResult:
         f"TEXT:\n{text}"
     )
     try:
-        response = await _format_client.responses.create(
+        with TokenTimer() as timer:
+            response = await _format_client.responses.create(
+                model=OPENAI_MODEL,
+                input=prompt,
+                response_format={"type": "json_object"},
+                max_output_tokens=300,
+            )
+
+        # 토큰 사용량 로깅
+        usage = extract_usage_from_response(response)
+        log_token_usage(
             model=OPENAI_MODEL,
-            input=prompt,
-            response_format={"type": "json_object"},
-            max_output_tokens=300,
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
+            duration_ms=timer.duration_ms,
+            caller="_coerce_rag_result",
         )
+
         parsed = json.loads(_extract_response_text(response))
         return RAGResult(**parsed)
     except Exception as exc:
@@ -242,7 +248,19 @@ async def run_rag_agent(
         logger.debug(f"  Context 길이: {len(context_str)} chars")
 
         # Agent 실행
-        result = await rag_agent.run(user_message, deps=deps)
+        with TokenTimer() as timer:
+            result = await rag_agent.run(user_message, deps=deps)
+
+        # TODO: 프로덕션 배포 전 삭제 - 토큰 사용량 로깅
+        usage = extract_usage_from_response(result)
+        log_token_usage(
+            model=OPENAI_MODEL,
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
+            duration_ms=timer.duration_ms,
+            caller="run_rag_agent",
+        )
 
         # pydantic-ai 최신 버전에서는 result.output 또는 result.all_messages() 사용
         logger.debug(f"  Agent result 타입: {type(result)}")

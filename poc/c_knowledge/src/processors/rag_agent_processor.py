@@ -131,6 +131,9 @@ class RAGPipeline:
             agent_result.is_sufficient,
         )
 
+        # 저장은 클라이언트가 /chat/save 호출 시 수행
+        # (자동 저장 제거 - 중복 방지)
+
         return RAGContext(
             query=query,
             memory=memory,

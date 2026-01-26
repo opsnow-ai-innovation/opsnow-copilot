@@ -20,6 +20,7 @@ from src.constants.batch import (
 from src.constants.memory import (
     ENTITIES_MAX_COUNT,
     MEMORY_MAX_SENTENCES,
+    MEMORY_SUMMARIZE_RETRY_COUNT,
     MEMORY_TTL_SECONDS,
     REDIS_KEY_ENTITIES,
     REDIS_KEY_MEMORY,
@@ -61,6 +62,7 @@ __all__ = [
     "SHORT_TERM_SIZE",
     "MEMORY_MAX_SENTENCES",
     "ENTITIES_MAX_COUNT",
+    "MEMORY_SUMMARIZE_RETRY_COUNT",
     "MEMORY_TTL_SECONDS",
     "REDIS_KEY_SHORT",
     "REDIS_KEY_MEMORY",
