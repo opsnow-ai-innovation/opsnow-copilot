@@ -212,6 +212,18 @@ class MemoryResponse(BaseModel):
     entities: dict[str, str] = Field(default_factory=dict, description="Entities")
 
 
+class HistoryResponse(BaseModel):
+    """히스토리 조회 응답"""
+
+    turns: list[dict] = Field(default_factory=list, description="전체 대화 턴")
+
+
+class ClearResponse(BaseModel):
+    """세션 초기화 응답"""
+
+    cleared: bool = Field(default=True)
+
+
 class SearchRequest(BaseModel):
     """검색 요청"""
 
@@ -259,6 +271,31 @@ async def debug_get_memory(
         long_term=context.memory,
         entities=context.entities,
     )
+
+
+@router.post("/debug/history", response_model=HistoryResponse)
+async def debug_get_history(
+    request: MemoryRequest,
+    store: RedisMemoryStore = Depends(get_memory_store),
+) -> HistoryResponse:
+    """[DEBUG] 전체 대화 히스토리 조회 (TODO: PoC 이후 삭제 예정)"""
+    turns = await store.get_all_turns(request.session)
+    return HistoryResponse(
+        turns=[
+            {"turn": t.turn, "user": t.user, "assistant": t.assistant}
+            for t in turns
+        ]
+    )
+
+
+@router.post("/debug/clear", response_model=ClearResponse)
+async def debug_clear_session(
+    request: MemoryRequest,
+    store: RedisMemoryStore = Depends(get_memory_store),
+) -> ClearResponse:
+    """[DEBUG] 세션 메모리 초기화 (TODO: PoC 이후 삭제 예정)"""
+    await store.clear(request.session)
+    return ClearResponse(cleared=True)
 
 
 @router.post("/debug/search", response_model=SearchResponse)
