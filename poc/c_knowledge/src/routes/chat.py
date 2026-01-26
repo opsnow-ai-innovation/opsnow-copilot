@@ -112,16 +112,19 @@ async def save_chat(
     - 단기기억이 5턴을 초과하면 Long-term 요약 트리거
     """
     if request.turn is None:
-        turns = await store.get_all_turns(request.session)
-        next_turn = len(turns) + 1
+        # 자동 증가 counter 사용 (요약 후 턴 삭제되어도 번호 유지)
+        # counter를 먼저 증가시켜서 turn_id를 가져옴
+        turn_key = f"chat:{request.session}:turn"
+        turn_id = await store._redis.incr(turn_key)
+        await store._redis.expire(turn_key, 86400)  # TTL 24시간
     else:
-        next_turn = request.turn
+        turn_id = request.turn
 
     turn = Turn(
-        turn=next_turn,
+        turn=turn_id,
         user=request.query,
         assistant=request.answer,
     )
     await store.add_turn(request.session, turn)
 
-    return SaveChatResponse(saved=True, turn=next_turn)
+    return SaveChatResponse(saved=True, turn=turn_id)

@@ -11,18 +11,15 @@ import json
 import os
 import sys
 import logging
+import re
 import httpx
 
-import redis.asyncio as redis
 from openai import AsyncOpenAI
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config import REDIS_URL, OPENAI_MODEL
-from src.constants.memory import SHORT_TERM_SIZE
-from src.models import Turn
-from src.processors.memory_store_processor import RedisMemoryStore
-from src.processors.memory_summarizer_processor import MemorySummarizer
+from src.config import OPENAI_MODEL
+from src.models import MemoryContext, Turn
 from src.processors.context_builder_processor import build_llm_context
 from src.rag_assistant.dom_parser import DomContextParser
 from src.mock.users import (
@@ -32,7 +29,20 @@ from src.mock.users import (
     generate_session_id,
     print_user_banner,
 )
-from src.mock.dom_context import get_cost_overview_dom_context
+from src.mock.dom_context import (
+    get_cost_overview_dom_context,
+    get_govern_kpi_dom_context,
+    get_optimize_my_commitments_dom_context,
+    get_random_dom_context,
+    # TODO: remove before production - filter-based random generation
+    generate_random_dom_context,
+    get_filter_options,
+    SCREEN_OPTIONS,
+    PERIOD_OPTIONS,
+    TREND_OPTIONS,
+    PROVIDER_OPTIONS,
+)
+from src.utils.text import sanitize_text
 from src.utils.secrets import get_open_ai_key
 
 logger = logging.getLogger(__name__)
@@ -50,6 +60,10 @@ class ChatCLI:
         /history - 대화 히스토리 확인
         /context - RAG 검색 결과만 확인
         /user - 현재 유저 정보 확인
+        /switch [화면] - 화면 전환 (cost, govern, optimize)
+        /filter [key] [value] - 필터 설정/확인 (screen, period, trend, providers)
+        /random - 현재 필터로 랜덤 데이터 생성
+        /eval [쿼리] - 쿼리에 대한 메모리 유용성 평가 (LLM-as-Judge)
         /quit - 종료
     """
 
@@ -58,36 +72,41 @@ class ChatCLI:
         self.session = f"{user.user_id}:{session_id}"
         self.turn_count = 0
         self.server_url = os.getenv("RAG_SERVER_URL", "http://localhost:8000")
-        self.redis_client = None
-        self.memory_store = None
-        self.summarizer = None
         self.http_client = None
         self.llm_client = None
         self.dom_parser = DomContextParser()
-        self.dom_context_raw = get_cost_overview_dom_context()
+        self.dom_context_raw = get_random_dom_context()
+        # 필터 상태 (None = 랜덤)
+        self.filter_screen: str | None = None
+        self.filter_period: str | None = None
+        self.filter_trend: str | None = None
+        self.filter_providers: list[str] | None = None
+
+    def _get_dom_context_page(self) -> str:
+        """Return page path from domContext if available."""
+        try:
+            data = json.loads(self.dom_context_raw)
+        except json.JSONDecodeError:
+            return "unknown"
+        return data.get("page") or data.get("current_page") or "unknown"
+
+    @staticmethod
+    def _sanitize_command_input(text: str) -> str:
+        """Strip invisible/bom characters from command input."""
+        cleaned = sanitize_text(text)
+        return re.sub(r"[\u200b-\u200f\u202a-\u202e\ufeff]", "", cleaned)
 
     async def initialize(self):
         """초기화"""
-        print("Redis 연결 중...")
-        self.redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-        await self.redis_client.ping()
-        print("Redis 연결 완료")
-
-        self.memory_store = RedisMemoryStore(self.redis_client)
-        self.summarizer = MemorySummarizer()
         self.http_client = httpx.AsyncClient(base_url=self.server_url, timeout=120.0)
         self.llm_client = AsyncOpenAI(api_key=get_open_ai_key())
 
-        # 기존 턴 수 확인
-        turns = await self.memory_store.get_all_turns(self.session)
-        self.turn_count = len(turns)
+        self.turn_count = 0
 
     async def close(self):
         """종료"""
         if self.http_client:
             await self.http_client.aclose()
-        if self.redis_client:
-            await self.redis_client.aclose()
 
     async def fetch_ranked_results(self, query: str) -> dict:
         """서버에서 정렬된 RAG 결과 조회"""
@@ -111,9 +130,30 @@ class ChatCLI:
             logger.error("RAG 서버 호출 실패: %s", exc)
             return {"ranked_results": [], "sources": [], "confidence": 0.0, "is_sufficient": False}
 
+    async def fetch_memory_context(self) -> MemoryContext:
+        """서버에서 메모리 컨텍스트 조회"""
+        payload = {"session": self.session}
+        try:
+            response = await self.http_client.post("/rag/debug/memory", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPError as exc:
+            logger.error("메모리 조회 실패: %s", exc)
+            return MemoryContext()
+
+        short_term = [
+            Turn(turn=item.get("turn", 0), user=item.get("user", ""), assistant=item.get("assistant", ""))
+            for item in data.get("short_term", [])
+        ]
+        return MemoryContext(
+            short_term=short_term,
+            memory=data.get("long_term", "") or "",
+            entities=data.get("entities", {}) or {},
+        )
+
     async def generate_answer(self, query: str, ranked_results: list[dict]) -> str:
         """정렬된 RAG 결과로 LLM 답변 생성"""
-        memory = await self.memory_store.get_context(self.session)
+        memory = await self.fetch_memory_context()
         dom_context = self.dom_parser.parse(self.dom_context_raw)
         dom_summary = dom_context.summary
         faq_results = [r["content"] for r in ranked_results]
@@ -188,18 +228,117 @@ class ChatCLI:
                         text_outputs.append(content_item.text)
         return "\n".join(text_outputs) if text_outputs else ""
 
+    async def _evaluate_memory(self, query: str):
+        """쿼리에 대한 메모리 유용성을 LLM-as-Judge로 평가"""
+        # 1. 메모리 상태 조회
+        memory = await self.fetch_memory_context()
+
+        if not memory.memory and not memory.entities:
+            print("\n[평가 불가] 저장된 메모리가 없습니다.\n")
+            return
+
+        # 2. LLM 평가 프롬프트
+        eval_prompt = f"""당신은 AI 메모리 시스템 평가자입니다.
+아래 쿼리를 처리하는 데 저장된 메모리가 유용한지 평가해주세요.
+
+## 사용자 쿼리
+{query}
+
+## 저장된 장기 기억
+{memory.memory or "(없음)"}
+
+## 저장된 엔티티
+{json.dumps(memory.entities, ensure_ascii=False) if memory.entities else "(없음)"}
+
+## 평가 기준 (각 0-10점)
+1. relevance (관련성): 쿼리와 관련된 정보가 메모리에 있는가? (높을수록 좋음)
+2. completeness (완전성): 쿼리 응답에 필요한 맥락이 충분한가? (높을수록 좋음)
+3. accuracy (정확성): 메모리 정보가 정확한가? (높을수록 좋음)
+4. noise (노이즈): 무관한 정보가 방해되는가? (낮을수록 좋음)
+
+## 응답 형식 (JSON만)
+{{
+    "overall_score": 0-100,
+    "scores": {{
+        "relevance": {{"score": 0-10, "reason": "..."}},
+        "completeness": {{"score": 0-10, "reason": "..."}},
+        "accuracy": {{"score": 0-10, "reason": "..."}},
+        "noise": {{"score": 0-10, "reason": "..."}}
+    }},
+    "helpful_info": ["쿼리 처리에 도움되는 정보"],
+    "missing_info": ["있었으면 좋았을 정보"],
+    "summary": "한 줄 평가"
+}}"""
+
+        try:
+            response = await self.llm_client.responses.create(
+                model=OPENAI_MODEL,
+                input=eval_prompt,
+            )
+            result_text = self._extract_response_text(response)
+
+            # JSON 파싱
+            try:
+                if "```json" in result_text:
+                    result_text = result_text.split("```json")[1].split("```")[0]
+                elif "```" in result_text:
+                    result_text = result_text.split("```")[1].split("```")[0]
+                result = json.loads(result_text.strip())
+
+                # 결과 출력
+                print("\n" + "=" * 50)
+                print("[메모리 유용성 평가]")
+                print("=" * 50)
+                print(f"쿼리: {query}")
+                print(f"전체 점수: {result.get('overall_score', 'N/A')}/100")
+                print(f"요약: {result.get('summary', 'N/A')}")
+
+                if "scores" in result:
+                    print("\n[항목별 점수]")
+                    for key, data in result["scores"].items():
+                        score = data.get("score", "N/A")
+                        reason = data.get("reason", "")
+                        direction = "(높을수록 좋음)" if key != "noise" else "(낮을수록 좋음)"
+                        print(f"  {key}: {score}/10 {direction}")
+                        if reason:
+                            print(f"    → {reason[:60]}...")
+
+                if result.get("helpful_info"):
+                    print("\n[도움되는 정보]")
+                    for info in result["helpful_info"][:3]:
+                        print(f"  + {info[:60]}...")
+
+                if result.get("missing_info"):
+                    print("\n[누락된 정보]")
+                    for info in result["missing_info"][:3]:
+                        print(f"  - {info[:60]}...")
+
+                print("=" * 50 + "\n")
+
+            except json.JSONDecodeError:
+                print(f"\n[평가 결과 (원문)]\n{result_text[:500]}...\n")
+
+        except Exception as exc:
+            print(f"\n[평가 실패] LLM 오류: {exc}\n")
+
     async def handle_command(self, cmd: str) -> bool:
         """명령어 처리. True면 계속, False면 종료"""
         if cmd == "/quit":
             return False
 
         elif cmd == "/clear":
-            await self.memory_store.clear(self.session)
-            self.turn_count = 0
-            print("\n[세션 초기화됨]\n")
+            payload = {"session": self.session}
+            try:
+                response = await self.http_client.post("/rag/debug/clear", json=payload)
+                response.raise_for_status()
+                self.turn_count = 0
+                print("\n[세션 초기화됨]\n")
+            except httpx.HTTPError as exc:
+                logger.error("세션 초기화 실패: %s", exc)
+                print("\n[세션 초기화 실패]\n")
 
         elif cmd == "/memory":
-            ctx = await self.memory_store.get_context(self.session)
+            ctx = await self.fetch_memory_context()
             print("\n" + "=" * 50)
             print("[메모리 상태]")
             print("=" * 50)
@@ -212,16 +351,24 @@ class ChatCLI:
             print("=" * 50 + "\n")
 
         elif cmd == "/history":
-            turns = await self.memory_store.get_all_turns(self.session)
-            print("\n" + "=" * 50)
-            print(f"[대화 히스토리] ({len(turns)}턴)")
-            print("=" * 50)
-            for t in turns:
-                print(f"[Turn {t.turn}]")
-                print(f"  User: {t.user}")
-                print(f"  Assistant: {t.assistant[:100]}...")
-                print()
-            print("=" * 50 + "\n")
+            payload = {"session": self.session}
+            try:
+                response = await self.http_client.post("/rag/debug/history", json=payload)
+                response.raise_for_status()
+                data = response.json()
+                turns = data.get("turns", [])
+                print("\n" + "=" * 50)
+                print(f"[대화 히스토리] ({len(turns)}턴)")
+                print("=" * 50)
+                for t in turns:
+                    print(f"[Turn {t.get('turn')}]")
+                    print(f"  User: {t.get('user')}")
+                    print(f"  Assistant: {str(t.get('assistant', ''))[:100]}...")
+                    print()
+                print("=" * 50 + "\n")
+            except httpx.HTTPError as exc:
+                logger.error("대화 히스토리 조회 실패: %s", exc)
+                print("\n[대화 히스토리 조회 실패]\n")
 
         elif cmd.startswith("/context"):
             # /context 뒤에 질문이 있으면 그걸로 검색
@@ -236,19 +383,139 @@ class ChatCLI:
         elif cmd == "/user":
             print_user_banner(self.user, self.session.split(":")[1])
 
+        elif cmd.startswith("/switch"):
+            # 화면 전환
+            parts = cmd.split()
+            if len(parts) < 2:
+                print("\n사용법: /switch [cost|govern|optimize]")
+                print("  cost     - 비용 개요 화면")
+                print("  govern   - 거버넌스 KPI 화면")
+                print("  optimize - 커밋먼트 최적화 화면\n")
+                return True
+
+            screen = parts[1].lower()
+            if screen == "cost":
+                self.dom_context_raw = get_cost_overview_dom_context()
+                print("\n[화면 전환] → 비용 개요 (Cost Overview)\n")
+            elif screen == "govern":
+                self.dom_context_raw = get_govern_kpi_dom_context()
+                print("\n[화면 전환] → 거버넌스 KPI (Governance KPI)\n")
+            elif screen == "optimize":
+                self.dom_context_raw = get_optimize_my_commitments_dom_context()
+                print("\n[화면 전환] → 커밋먼트 최적화 (Optimize Commitments)\n")
+            else:
+                print(f"\n알 수 없는 화면: {screen}")
+                print("사용 가능: cost, govern, optimize\n")
+
+        elif cmd.startswith("/filter"):
+            # 필터 설정/확인
+            parts = cmd.split()
+            if len(parts) == 1:
+                # 현재 필터 상태 및 옵션 출력
+                print("\n" + "=" * 50)
+                print("[필터 설정]")
+                print("=" * 50)
+                print(f"  screen:    {self.filter_screen or '(랜덤)'}")
+                print(f"  period:    {self.filter_period or '(랜덤)'}")
+                print(f"  trend:     {self.filter_trend or '(랜덤)'}")
+                print(f"  providers: {self.filter_providers or '(랜덤)'}")
+                print("\n사용 가능한 옵션:")
+                print(f"  screen:    {', '.join(SCREEN_OPTIONS)}")
+                print(f"  period:    {', '.join(PERIOD_OPTIONS)}")
+                print(f"  trend:     {', '.join(TREND_OPTIONS)}")
+                print(f"  providers: {', '.join(PROVIDER_OPTIONS)}")
+                print("\n사용법:")
+                print("  /filter screen cost_overview")
+                print("  /filter period last_30_days")
+                print("  /filter trend increasing")
+                print("  /filter providers AWS,GCP")
+                print("  /filter reset")
+                print("=" * 50 + "\n")
+            elif len(parts) == 2 and parts[1] == "reset":
+                self.filter_screen = None
+                self.filter_period = None
+                self.filter_trend = None
+                self.filter_providers = None
+                print("\n[필터 초기화됨] 모든 필터가 랜덤으로 설정됨\n")
+            elif len(parts) >= 3:
+                key = parts[1].lower()
+                value = parts[2]
+                if key == "screen":
+                    if value in SCREEN_OPTIONS:
+                        self.filter_screen = value
+                        print(f"\n[필터 설정] screen = {value}\n")
+                    else:
+                        print(f"\n잘못된 값: {value}")
+                        print(f"사용 가능: {', '.join(SCREEN_OPTIONS)}\n")
+                elif key == "period":
+                    if value in PERIOD_OPTIONS:
+                        self.filter_period = value
+                        print(f"\n[필터 설정] period = {value}\n")
+                    else:
+                        print(f"\n잘못된 값: {value}")
+                        print(f"사용 가능: {', '.join(PERIOD_OPTIONS)}\n")
+                elif key == "trend":
+                    if value in TREND_OPTIONS:
+                        self.filter_trend = value
+                        print(f"\n[필터 설정] trend = {value}\n")
+                    else:
+                        print(f"\n잘못된 값: {value}")
+                        print(f"사용 가능: {', '.join(TREND_OPTIONS)}\n")
+                elif key == "providers":
+                    provider_list = [p.strip() for p in value.split(",")]
+                    valid = all(p in PROVIDER_OPTIONS for p in provider_list)
+                    if valid:
+                        self.filter_providers = provider_list
+                        print(f"\n[필터 설정] providers = {provider_list}\n")
+                    else:
+                        print(f"\n잘못된 값: {value}")
+                        print(f"사용 가능: {', '.join(PROVIDER_OPTIONS)}\n")
+                else:
+                    print(f"\n알 수 없는 필터 키: {key}")
+                    print("사용 가능: screen, period, trend, providers\n")
+            else:
+                print("\n사용법: /filter [key] [value] 또는 /filter reset\n")
+
+        elif cmd == "/random":
+            # 현재 필터로 랜덤 데이터 생성
+            self.dom_context_raw = generate_random_dom_context(
+                screen_type=self.filter_screen,
+                period=self.filter_period,
+                trend=self.filter_trend,
+                providers=self.filter_providers,
+            )
+            data = json.loads(self.dom_context_raw)
+            generated = data.get("generated", {})
+            print("\n" + "=" * 50)
+            print("[랜덤 데이터 생성됨]")
+            print("=" * 50)
+            print(f"  screen:    {generated.get('screen_type', 'unknown')}")
+            print(f"  period:    {generated.get('period', 'unknown')}")
+            print(f"  trend:     {generated.get('trend', 'unknown')}")
+            print(f"  providers: {generated.get('providers', [])}")
+            print("=" * 50 + "\n")
+
+        elif cmd.startswith("/eval"):
+            # 쿼리에 대한 메모리 유용성 평가 (LLM-as-Judge)
+            query = cmd[5:].strip()
+            if not query:
+                print("\n사용법: /eval [평가할 쿼리]")
+                print("예시: /eval 아까 말한 예산 초과 상황 다시 설명해줘\n")
+                return True
+            print("\n[메모리 유용성 평가 중...]")
+            await self._evaluate_memory(query)
+
         else:
             print(f"알 수 없는 명령어: {cmd}")
-            print("사용 가능: /clear, /memory, /history, /context, /user, /quit")
+            print("사용 가능: /clear, /memory, /history, /context, /user, /switch, /filter, /random, /eval, /quit")
 
         return True
 
     async def chat(self, user_input: str):
         """대화 처리"""
-        self.turn_count += 1
-
         # 1. pydantic-ai Agent 실행 (검색 + 응답 생성)
         print("\n[RAG 서버 호출 중...]")
-        logger.debug("RAG retrieve start: session=%s turn=%s", self.session, self.turn_count)
+        logger.debug("RAG retrieve start: session=%s", self.session)
         rag_payload = await self.fetch_ranked_results(user_input)
         print(
             f"  → confidence: {rag_payload.get('confidence', 0.0):.2f}, "
@@ -260,39 +527,29 @@ class ChatCLI:
         print("[LLM 답변 생성 중...]")
         answer = await self.generate_answer(user_input, ranked_results)
 
-        # 2. 대화 턴 저장
-        turn = Turn(
-            turn=self.turn_count,
-            user=user_input,
-            assistant=answer,
-        )
-        await self.memory_store.add_turn(self.session, turn)
-        logger.debug("Turn saved: session=%s turn=%s", self.session, self.turn_count)
+        # 2. 서버에 대화 저장 요청
+        save_payload = {
+            "session": self.session,
+            "user_id": self.user.user_id,
+            "query": user_input,
+            "answer": answer,
+        }
+        try:
+            response = await self.http_client.post("/chat/save", json=save_payload)
+            response.raise_for_status()
+            data = response.json()
+            self.turn_count = data.get("turn", self.turn_count)
+            logger.debug("Turn saved by server: session=%s turn=%s", self.session, self.turn_count)
+        except httpx.HTTPError as exc:
+            logger.error("대화 저장 실패: %s", exc)
 
-        # 3. 메모리 요약 (SHORT_TERM_SIZE마다)
-        if self.turn_count % SHORT_TERM_SIZE == 0:
-            print("[메모리 요약 중...]")
-            ctx = await self.memory_store.get_context(self.session)
-            logger.debug(
-                "Memory summarize trigger: short_term=%s long_term_len=%s entities=%s",
-                len(ctx.short_term),
-                len(ctx.memory or ""),
-                list((ctx.entities or {}).keys()),
-            )
-            result = await self.summarizer.recursive_summarize(
-                prev_memory=ctx.memory,
-                new_turns=ctx.short_term,
-                prev_entities=ctx.entities,
-            )
-            await self.memory_store.update_memory(
-                self.session, result.memory, result.entities
-            )
-            logger.debug("Memory updated: long_term_len=%s", len(result.memory or ""))
-
-        # 4. 응답 출력
+        # 3. 응답 출력
         print("\n" + "-" * 50)
         print(f"Assistant: {answer}")
         print("-" * 50 + "\n")
+
+        # 4. 메모리 유용성 자동 평가
+        await self._evaluate_memory(user_input)
 
     async def run(self):
         """메인 루프"""
@@ -301,18 +558,29 @@ class ChatCLI:
         # 유저 배너 출력
         session_id = self.session.split(":")[1]
         print_user_banner(self.user, session_id)
+        print(f"Selected page: {self._get_dom_context_page()}")
 
         print("=" * 50)
         print("OpsNow Copilot - Chat CLI (pydantic-ai)")
         print("=" * 50)
-        print("명령어: /clear, /memory, /history, /context [질문], /user, /quit")
+        print("명령어:")
+        print("  /clear    - 세션 초기화")
+        print("  /memory   - 메모리 상태 확인")
+        print("  /history  - 대화 히스토리")
+        print("  /context  - RAG 검색 결과")
+        print("  /user     - 유저 정보")
+        print("  /switch   - 화면 전환")
+        print("  /filter   - 필터 설정/확인")
+        print("  /random   - 랜덤 데이터 생성")
+        print("  /eval     - 메모리 유용성 평가 (/eval 쿼리)")
+        print("  /quit     - 종료")
         print("=" * 50 + "\n")
 
         try:
             while True:
                 try:
                     prompt = f"{self.user.color}[{self.user.name}]{RESET_COLOR} You: "
-                    user_input = input(prompt).strip()
+                    user_input = self._sanitize_command_input(input(prompt)).strip()
                 except EOFError:
                     break
 

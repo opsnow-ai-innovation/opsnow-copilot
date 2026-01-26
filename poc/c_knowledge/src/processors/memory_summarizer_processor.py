@@ -1,16 +1,27 @@
 """Recursive Summarization 모듈"""
 
+import logging
 import json
 
 from openai import AsyncOpenAI
 
 from src.config import OPENAI_MODEL
-from src.constants.memory import MEMORY_MAX_SENTENCES, ENTITIES_MAX_COUNT
+from src.constants.memory import (
+    ENTITIES_MAX_COUNT,
+    MEMORY_MAX_SENTENCES,
+    MEMORY_SUMMARIZE_RETRY_COUNT,
+)
 from src.models import SummarizerResult, Turn
 from src.utils.text import sanitize_text
 from src.utils.secrets import get_open_ai_key
+from src.utils.token_logger import (
+    TokenTimer,
+    extract_usage_from_response,
+    log_token_usage,
+)
 
 client = AsyncOpenAI(api_key=get_open_ai_key())
+logger = logging.getLogger(__name__)
 
 
 class MemorySummarizer:
@@ -90,27 +101,49 @@ entities에서 추출할 정보:
 
 ※ 주제가 바뀌어도 Entities 유지 ({ENTITIES_MAX_COUNT}개 초과 시 FIFO로 오래된 것부터 삭제)"""
 
-        try:
-            response = await client.responses.create(
-                model=OPENAI_MODEL,
-                input=prompt,
-                max_output_tokens=800,
-                response_format={"type": "json_object"},
-            )
+        last_exc: Exception | None = None
+        for attempt in range(MEMORY_SUMMARIZE_RETRY_COUNT):
+            try:
+                with TokenTimer() as timer:
+                    response = await client.chat.completions.create(
+                        model=OPENAI_MODEL,
+                        messages=[{"role": "user", "content": prompt}],
+                        response_format={"type": "json_object"},
+                    )
 
-            result = json.loads(_extract_response_text(response))
+                # 토큰 사용량 로깅
+                usage = extract_usage_from_response(response)
+                log_token_usage(
+                    model=OPENAI_MODEL,
+                    prompt_tokens=usage["prompt_tokens"],
+                    completion_tokens=usage["completion_tokens"],
+                    total_tokens=usage["total_tokens"],
+                    duration_ms=timer.duration_ms,
+                    caller="MemorySummarizer.recursive_summarize",
+                )
 
-            return SummarizerResult(
-                memory=result.get("memory", ""),
-                entities=result.get("entities", {}),
-            )
+                result = json.loads(response.choices[0].message.content)
 
-        except Exception:
-            # 실패 시 이전 메모리 유지
-            return SummarizerResult(
-                memory=prev_memory,
-                entities=prev_entities,
-            )
+                # entities가 문자열로 반환되면 파싱
+                entities = result.get("entities", {})
+                if isinstance(entities, str):
+                    try:
+                        entities = json.loads(entities)
+                    except json.JSONDecodeError:
+                        entities = prev_entities
+
+                return SummarizerResult(
+                    memory=result.get("memory", "") or prev_memory,
+                    entities=entities or prev_entities,
+                )
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Memory summarize attempt %s failed: %s", attempt + 1, exc
+                )
+
+        logger.warning("Memory summarize failed, fallback used: %s", last_exc)
+        return _fallback_summarize(prev_memory, new_turns, prev_entities)
 
 
 def _extract_response_text(response) -> str:
@@ -123,3 +156,26 @@ def _extract_response_text(response) -> str:
                 if getattr(content_item, "type", None) == "output_text":
                     text_outputs.append(content_item.text)
     return "\n".join(text_outputs) if text_outputs else ""
+
+
+def _fallback_summarize(
+    prev_memory: str,
+    new_turns: list[Turn],
+    prev_entities: dict[str, str],
+) -> SummarizerResult:
+    """Fallback summary/entities when LLM summarization fails."""
+    recent_user = [t.user for t in new_turns][-3:]
+    recent_assistant = [t.assistant for t in new_turns][-3:]
+    summary_parts = []
+    if prev_memory:
+        summary_parts.append(prev_memory.strip())
+    if recent_user:
+        summary_parts.append("최근 질문: " + " / ".join(recent_user))
+    if recent_assistant:
+        summary_parts.append("최근 답변: " + " / ".join(recent_assistant))
+    summary = ". ".join(p for p in summary_parts if p)
+
+    return SummarizerResult(
+        memory=summary[:2000],
+        entities=prev_entities,
+    )
