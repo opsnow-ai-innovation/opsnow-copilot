@@ -29,9 +29,16 @@ def test_chat_save_assigns_next_turn():
         captured["session"] = session
         captured["turn"] = turn
 
+    async def fake_incr(key):
+        return 2  # next turn id
+
+    async def fake_expire(key, ttl):
+        return True
+
     memory_store = SimpleNamespace(
         get_all_turns=fake_get_all_turns,
         add_turn=fake_add_turn,
+        _redis=SimpleNamespace(incr=fake_incr, expire=fake_expire),
     )
 
     app = _build_app(memory_store)
