@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Phase 2 — 선별 저장 및 데이터 관리 테스트</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Consolas', 'Menlo', monospace; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+    h1 { color: #89b4fa; margin-bottom: 8px; font-size: 20px; }
+    h2 { color: #a6e3a1; margin: 20px 0 10px; font-size: 16px; }
+    .subtitle { color: #6c7086; font-size: 13px; margin-bottom: 20px; }
+
+    .section { background: #313244; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .section-title { color: #f5c2e7; font-size: 14px; font-weight: bold; margin-bottom: 12px; }
+    .section-desc { color: #6c7086; font-size: 11px; margin-bottom: 10px; line-height: 1.5; }
+    .guide { color: #9399b2; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+
+    button {
+      background: #45475a; color: #cdd6f4; border: 1px solid #585b70;
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; font-family: inherit;
+      font-size: 13px; margin: 4px;
+    }
+    button:hover { background: #585b70; }
+    button.primary { background: #89b4fa; color: #1e1e2e; border-color: #89b4fa; font-weight: bold; }
+    button.danger { background: #f38ba8; color: #1e1e2e; border-color: #f38ba8; }
+    button.warn { background: #f9e2af; color: #1e1e2e; border-color: #f9e2af; }
+
+    .status-bar {
+      background: #11111b; border: 1px solid #313244; border-radius: 6px;
+      padding: 8px 12px; margin-bottom: 16px; font-size: 12px;
+      display: flex; gap: 20px;
+    }
+    .status-item { display: flex; gap: 6px; }
+    .status-label { color: #6c7086; }
+    .status-value { color: #a6e3a1; font-weight: bold; }
+
+    #log {
+      background: #11111b; border: 1px solid #313244; border-radius: 8px;
+      padding: 12px; height: 350px; overflow-y: auto; font-size: 12px;
+      line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+    }
+    .log-info { color: #89b4fa; }
+    .log-success { color: #a6e3a1; }
+    .log-warn { color: #f9e2af; }
+    .log-error { color: #f38ba8; }
+    .log-data { color: #cba6f7; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+    th { background: #45475a; padding: 6px 8px; text-align: left; color: #89b4fa; }
+    td { padding: 6px 8px; border-bottom: 1px solid #313244; }
+    tr:hover td { background: #45475a; }
+  </style>
+</head>
+<body>
+
+<h1>Phase 2: 선별 저장 및 데이터 관리 테스트</h1>
+<p class="subtitle">필터링 + TTL + 용량 관리 + 중복 방지 + 메뉴 변경 삭제 | Mock API: http://localhost:3456</p>
+
+<!-- 상태 바 -->
+<div class="status-bar">
+  <div class="status-item"><span class="status-label">현재 메뉴:</span> <span class="status-value" id="current-menu">-</span></div>
+  <div class="status-item"><span class="status-label">캐시 건수:</span> <span class="status-value" id="cache-count">0</span></div>
+  <div class="status-item"><span class="status-label">TTL:</span> <span class="status-value" id="ttl-value">-</span></div>
+  <div class="status-item"><span class="status-label">Max Entries:</span> <span class="status-value" id="max-entries">-</span></div>
+</div>
+
+<!-- 2-1. 필터링 테스트 -->
+<div class="section">
+  <div class="section-title">2-1. 필터링 테스트</div>
+  <div class="section-desc">대상 URL만 저장, 비대상/에러/비JSON/대용량은 스킵. 순서 무관, 개별 실행 가능.</div>
+  <button class="primary" onclick="testTargetUrl()">GET /api/cost/summary (대상)</button>
+  <button onclick="testNonTargetUrl()">GET /auth/token (비대상 URL)</button>
+  <button onclick="testDeleteMethod()">DELETE /api/cost/item/123 (비대상 메서드)</button>
+  <button onclick="testError500()">GET /api/error/500 (에러 응답)</button>
+  <button onclick="testHtmlResponse()">GET /api/html-response (비 JSON)</button>
+  <button class="warn" onclick="testLargeResponse()">GET /api/large-response (~6MB)</button>
+  <p class="guide">확인: 첫 번째(대상)만 IndexedDB에 저장되고, 나머지 5개는 조건에 의해 스킵되어야 함. [캐시 조회]로 확인.</p>
+</div>
+
+<!-- 2-2. 데이터 관리 테스트 -->
+<div class="section">
+  <div class="section-title">2-2. 데이터 관리 테스트</div>
+  <div class="section-desc">덮어쓰기, TTL 만료, 중복 방지. 개별 실행 가능하나 권장 순서: 덮어쓰기 → 중복 방지 → TTL → 다수 API.</div>
+  <button class="primary" onclick="testOverwrite()">덮어쓰기 (같은 URL 2회)</button>
+  <button onclick="testDedup()">중복 방지 (1초 내 3회 연속)</button>
+  <button class="warn" onclick="testTtlExpiry()">TTL 만료 테스트 (TTL=5초로 변경)</button>
+  <button onclick="testMultiApiOnMenu()">단일 메뉴 다수 API (5건)</button>
+  <p class="guide">
+    · 덮어쓰기: 같은 URL 2회 호출 → 최신 데이터만 남는지 확인 (~2초 소요)<br>
+    · 중복 방지: 1초 내 3회 연속 요청 → 1건만 저장되는지 확인<br>
+    · TTL 만료: TTL을 5초로 줄인 후 저장 → 6초 대기 → 만료 삭제 확인 (~7초 소요, 자동 복원)<br>
+    · 다수 API: 하나의 메뉴에서 5개 API 호출 → 전부 저장, 메뉴별 키 목록 확인 (~6초 소요, 캐시 초기화 후 실행)
+  </p>
+</div>
+
+<!-- 2-3. 메뉴 변경 삭제 테스트 -->
+<div class="section">
+  <div class="section-title">2-3. 메뉴 변경 시 삭제 정책 테스트</div>
+  <div class="section-desc">메뉴 이동 시 이전 메뉴 데이터 삭제, History API 래핑 검증</div>
+  <button class="primary" onclick="testMenuScenario()">전체 시나리오 실행</button>
+  <button onclick="simulateMenuWithData('/cost/analytics')">이동: /cost/analytics</button>
+  <button onclick="simulateMenuWithData('/asset/inventory')">이동: /asset/inventory</button>
+  <button onclick="simulateMenuWithData('/billing/overview')">이동: /billing/overview</button>
+  <p class="guide">
+    · 전체 시나리오: /cost/ → /asset/ → /billing/ 순서로 자동 이동. 각 단계에서 해당 메뉴 API 호출 후 이전 메뉴 데이터 삭제 확인 (~10초 소요)<br>
+    · 개별 이동 버튼: 해당 메뉴로 이동 + 메뉴에 속한 API를 호출하여 캐시에 저장. 이전 메뉴 데이터는 자동 삭제됨.<br>
+    · 확인: [캐시 조회]에서 현재 메뉴 데이터만 존재하는지, 이전 메뉴 데이터는 삭제됐는지 확인
+  </p>
+</div>
+
+<!-- IndexedDB 스키마 + 메타정보 -->
+<div class="section">
+  <div class="section-title">IndexedDB 스키마 / 메타정보</div>
+  <div class="section-desc">DB 구조, 인덱스, 정책 설정값, 메뉴별 분포, 그리고 저장된 각 API 응답의 데이터 스키마(필드명/타입/미리보기)를 확인합니다. 데이터가 저장된 상태에서 실행하세요.</div>
+  <button class="primary" onclick="showSchemaInfo()">스키마 + 메타정보 조회</button>
+  <div id="schema-info"></div>
+</div>
+
+<!-- IndexedDB 캐시 확인 -->
+<div class="section">
+  <div class="section-title">IndexedDB 캐시 확인</div>
+  <button class="primary" onclick="refreshCacheView()">캐시 조회</button>
+  <button class="danger" onclick="clearCache()">전체 삭제</button>
+  <div id="cache-table"></div>
+</div>
+
+<!-- 로그 -->
+<h2>실행 로그</h2>
+<div id="log"></div>
+<button style="margin-top:8px" onclick="document.getElementById('log').innerHTML=''">로그 지우기</button>
+
+<!-- 스크립트 -->
+<script src="copilot-cache.js"></script>
+<script src="copilot-network-hook.js"></script>
+
+<script>
+const API_BASE = ''; // 같은 origin (http://localhost:3456)
+const logEl = document.getElementById('log');
+
+function log(msg, type = 'info') {
+  const ts = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = `log-${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function logData(label, data) {
+  log(`${label}: ${JSON.stringify(data, null, 2).substring(0, 200)}`, 'data');
+}
+
+function updateStatus() {
+  document.getElementById('current-menu').textContent =
+    window.CopilotNetworkHook ? CopilotNetworkHook.currentMenu() : location.pathname;
+  CopilotCache.count().then((c) => {
+    document.getElementById('cache-count').textContent = c;
+  });
+  document.getElementById('ttl-value').textContent = (CopilotCache.POLICY.TTL / 1000) + 's';
+  document.getElementById('max-entries').textContent = CopilotCache.POLICY.MAX_ENTRIES;
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// ─── 2-1. 필터링 테스트 ───
+
+async function testTargetUrl() {
+  log('--- 2-1. 대상 URL 테스트 ---', 'info');
+  const res = await fetch(`${API_BASE}/api/cost/summary`);
+  const data = await res.json();
+  logData('응답', data);
+  log('대상 URL → IndexedDB에 저장되어야 함', 'success');
+  await sleep(100);
+  updateStatus();
+}
+
+async function testNonTargetUrl() {
+  log('--- 2-1. 비대상 URL 테스트 ---', 'info');
+  const res = await fetch(`${API_BASE}/auth/token`);
+  const data = await res.json();
+  logData('응답', data);
+  log('비대상 URL (/auth/) → 저장 안 됨', 'warn');
+  await sleep(100);
+  updateStatus();
+}
+
+async function testDeleteMethod() {
+  log('--- 2-1. DELETE 메서드 테스트 ---', 'info');
+  const res = await fetch(`${API_BASE}/api/cost/item/123`, { method: 'DELETE' });
+  const data = await res.json();
+  logData('응답', data);
+  log('DELETE 메서드 → 저장 안 됨 (GET/POST만 대상)', 'warn');
+  await sleep(100);
+  updateStatus();
+}
+
+async function testError500() {
+  log('--- 2-1. 500 에러 응답 테스트 ---', 'info');
+  try {
+    const res = await fetch(`${API_BASE}/api/error/500`);
+    const data = await res.json();
+    logData('응답', data);
+    log(`status: ${res.status} → 저장 안 됨 (200~299만 대상)`, 'warn');
+  } catch (err) {
+    log(`에러: ${err.message}`, 'error');
+  }
+  await sleep(100);
+  updateStatus();
+}
+
+async function testHtmlResponse() {
+  log('--- 2-1. 비 JSON (text/html) 테스트 ---', 'info');
+  const res = await fetch(`${API_BASE}/api/html-response`);
+  const text = await res.text();
+  log(`응답: ${text.substring(0, 100)}`, 'data');
+  log('Content-Type: text/html → 저장 안 됨', 'warn');
+  await sleep(100);
+  updateStatus();
+}
+
+async function testLargeResponse() {
+  log('--- 2-1. 대용량 응답 테스트 (~6MB) ---', 'info');
+  log('요청 중... (시간이 걸릴 수 있음)', 'info');
+  try {
+    const res = await fetch(`${API_BASE}/api/large-response`);
+    const data = await res.json();
+    const size = new Blob([JSON.stringify(data)]).size;
+    log(`응답 크기: ${(size / 1024 / 1024).toFixed(2)} MB`, 'data');
+    log(`MAX_SIZE: ${(CopilotCache.POLICY.MAX_SIZE_BYTES / 1024 / 1024).toFixed(0)} MB → ${size > CopilotCache.POLICY.MAX_SIZE_BYTES ? '초과 → 저장 안 됨' : '이하 → 저장됨'}`, 'warn');
+  } catch (err) {
+    log(`에러: ${err.message}`, 'error');
+  }
+  await sleep(100);
+  updateStatus();
+}
+
+// ─── 2-2. 데이터 관리 테스트 ───
+
+async function testOverwrite() {
+  log('--- 2-2. 덮어쓰기 테스트 ---', 'info');
+
+  log('1차 요청: /api/cost/summary', 'info');
+  await fetch(`${API_BASE}/api/cost/summary`).then((r) => r.json());
+  await sleep(1100); // 중복 방지 간격 대기
+
+  log('2차 요청: /api/cost/summary (다른 데이터)', 'info');
+  await fetch(`${API_BASE}/api/cost/summary`).then((r) => r.json());
+  await sleep(200);
+
+  const record = await CopilotCache.get('/api/cost/summary');
+  if (record) {
+    log(`저장된 callNumber: ${record.data.callNumber} → 최신 데이터만 존재해야 함`, 'success');
+  }
+  updateStatus();
+}
+
+async function testDedup() {
+  log('--- 2-2. 중복 방지 테스트 (1초 내 3회) ---', 'info');
+  const before = await CopilotCache.count();
+
+  // 3회 빠르게 연속 요청
+  fetch(`${API_BASE}/api/asset/list`);
+  fetch(`${API_BASE}/api/asset/list`);
+  fetch(`${API_BASE}/api/asset/list`);
+
+  await sleep(500);
+  const after = await CopilotCache.count();
+  log(`요청 3회 → 저장 건수 증가: ${after - before}건 (1건이어야 함)`, after - before <= 1 ? 'success' : 'error');
+  updateStatus();
+}
+
+async function testTtlExpiry() {
+  log('--- 2-2. TTL 만료 테스트 ---', 'info');
+
+  // TTL을 5초로 변경
+  const originalTTL = CopilotCache.POLICY.TTL;
+  CopilotCache.POLICY.TTL = 5000;
+  log(`TTL 변경: ${originalTTL / 1000}s → 5s`, 'warn');
+  updateStatus();
+
+  // 데이터 저장
+  log('데이터 저장: /api/billing/overview', 'info');
+  await fetch(`${API_BASE}/api/billing/overview`).then((r) => r.json());
+  await sleep(200);
+
+  const before = await CopilotCache.get('/api/billing/overview');
+  log(`저장 직후: ${before ? '존재' : '없음'}`, before ? 'success' : 'error');
+
+  // 6초 대기
+  log('6초 대기 중...', 'warn');
+  await sleep(6000);
+
+  const after = await CopilotCache.get('/api/billing/overview');
+  log(`6초 후: ${after ? '아직 존재 (실패)' : 'TTL 만료 → 삭제됨 (성공)'}`, after ? 'error' : 'success');
+
+  // TTL 복원
+  CopilotCache.POLICY.TTL = originalTTL;
+  log(`TTL 복원: ${originalTTL / 1000}s`, 'info');
+  updateStatus();
+}
+
+async function testMultiApiOnMenu() {
+  log('--- 2-2. 단일 메뉴 다수 API 테스트 ---', 'info');
+  await CopilotCache.clear();
+
+  // 현재 메뉴 설정
+  CopilotNetworkHook.simulateMenuChange('/cost/analytics');
+  await sleep(300);
+  const menu = CopilotNetworkHook.currentMenu();
+  log(`현재 메뉴: ${menu}`, 'info');
+
+  // 5개 API 순차 호출 (중복 방지 간격 고려)
+  const apis = [
+    { url: '/api/cost/summary', method: 'GET' },
+    { url: '/api/cost/detail', method: 'POST' },
+    { url: '/api/asset/list', method: 'GET' },
+    { url: '/api/asset/detail', method: 'POST' },
+    { url: '/api/billing/overview', method: 'GET' },
+  ];
+
+  for (const api of apis) {
+    const opts = api.method === 'POST'
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      : {};
+    await fetch(`${API_BASE}${api.url}`, opts).then((r) => r.json());
+    log(`요청: ${api.method} ${api.url}`, 'info');
+    await sleep(1100); // 중복 방지 간격 대기
+  }
+
+  await sleep(300);
+
+  // 메뉴별 조회
+  const records = await CopilotCache.getByMenu(menu);
+  log(`${menu} 저장 건수: ${records.length}건 (5건이어야 함)`, records.length === 5 ? 'success' : 'error');
+
+  // 키 목록 확인
+  const keys = records.map((r) => r.key);
+  log(`저장된 키 목록: ${keys.join(', ')}`, 'data');
+
+  updateStatus();
+  refreshCacheView();
+}
+
+// ─── 2-3. 메뉴 변경 테스트 ───
+
+// 메뉴별 호출할 API 매핑
+const MENU_APIS = {
+  '/cost/analytics': [
+    { url: '/api/cost/summary', method: 'GET' },
+    { url: '/api/cost/detail', method: 'POST' },
+  ],
+  '/asset/inventory': [
+    { url: '/api/asset/list', method: 'GET' },
+    { url: '/api/asset/detail', method: 'POST' },
+  ],
+  '/billing/overview': [
+    { url: '/api/billing/overview', method: 'GET' },
+  ],
+};
+
+async function simulateMenuWithData(path) {
+  log(`메뉴 이동: → ${path}`, 'info');
+  CopilotNetworkHook.simulateMenuChange(path);
+  await sleep(300);
+
+  // 해당 메뉴의 API 호출 → 캐시 저장
+  const apis = MENU_APIS[path] || [];
+  for (const api of apis) {
+    const opts = api.method === 'POST'
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      : {};
+    await fetch(`${API_BASE}${api.url}`, opts).then((r) => r.json());
+    log(`  API 호출: ${api.method} ${api.url}`, 'info');
+    await sleep(1100); // 중복 방지 간격 대기
+  }
+
+  await sleep(200);
+  const records = await CopilotCache.getByMenu(path);
+  log(`${path} 캐시 저장: ${records.length}건`, 'success');
+  updateStatus();
+  refreshCacheView();
+}
+
+async function testMenuScenario() {
+  log('=== 2-3. 메뉴 변경 전체 시나리오 시작 ===', 'info');
+  await CopilotCache.clear();
+
+  // Step 1: /cost/analytics 진입 + API 호출
+  log('Step 1: /cost/analytics 페이지 진입', 'info');
+  CopilotNetworkHook.simulateMenuChange('/cost/analytics');
+  await sleep(300);
+
+  for (const api of MENU_APIS['/cost/analytics']) {
+    const opts = api.method === 'POST'
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      : {};
+    await fetch(`${API_BASE}${api.url}`, opts).then((r) => r.json());
+    log(`  API 호출: ${api.method} ${api.url}`, 'info');
+    await sleep(1100);
+  }
+
+  const costRecords = await CopilotCache.getByMenu('/cost/analytics');
+  log(`/cost/analytics 캐시: ${costRecords.length}건`, 'success');
+
+  // Step 2: /asset/inventory 이동 → 이전 삭제 + API 호출
+  log('Step 2: /asset/inventory 페이지로 이동', 'info');
+  CopilotNetworkHook.simulateMenuChange('/asset/inventory');
+  await sleep(500);
+
+  const costAfter = await CopilotCache.getByMenu('/cost/analytics');
+  log(`이동 후 /cost/analytics 데이터: ${costAfter.length}건 (0이어야 함)`, costAfter.length === 0 ? 'success' : 'error');
+
+  for (const api of MENU_APIS['/asset/inventory']) {
+    const opts = api.method === 'POST'
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      : {};
+    await fetch(`${API_BASE}${api.url}`, opts).then((r) => r.json());
+    log(`  API 호출: ${api.method} ${api.url}`, 'info');
+    await sleep(1100);
+  }
+
+  const assetRecords = await CopilotCache.getByMenu('/asset/inventory');
+  log(`/asset/inventory 캐시: ${assetRecords.length}건`, 'success');
+
+  // Step 3: /billing/overview 이동 → 이전 삭제 + API 호출
+  log('Step 3: /billing/overview 페이지로 이동', 'info');
+  CopilotNetworkHook.simulateMenuChange('/billing/overview');
+  await sleep(500);
+
+  const assetAfter = await CopilotCache.getByMenu('/asset/inventory');
+  log(`이동 후 /asset/inventory 데이터: ${assetAfter.length}건 (0이어야 함)`, assetAfter.length === 0 ? 'success' : 'error');
+
+  for (const api of MENU_APIS['/billing/overview']) {
+    const opts = api.method === 'POST'
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      : {};
+    await fetch(`${API_BASE}${api.url}`, opts).then((r) => r.json());
+    log(`  API 호출: ${api.method} ${api.url}`, 'info');
+    await sleep(1100);
+  }
+
+  const billingRecords = await CopilotCache.getByMenu('/billing/overview');
+  log(`/billing/overview 캐시: ${billingRecords.length}건`, 'success');
+
+  log('=== 메뉴 변경 시나리오 완료 ===', 'success');
+  updateStatus();
+  refreshCacheView();
+}
+
+// ─── IndexedDB 스키마 + 메타정보 ───
+
+async function showSchemaInfo() {
+  log('--- IndexedDB 스키마 + 메타정보 조회 ---', 'info');
+  const container = document.getElementById('schema-info');
+
+  try {
+    const db = await CopilotCache.openDB();
+    const records = await CopilotCache.getAll();
+
+    // 전체 데이터 크기 계산
+    let totalSize = 0;
+    const menuMap = {};
+    records.forEach((r) => {
+      const size = r.size || 0;
+      totalSize += size;
+      const menuLabel = r.menu.startsWith('/Users/') ? '(local file)' : r.menu;
+      if (!menuMap[menuLabel]) menuMap[menuLabel] = { count: 0, size: 0, keys: [] };
+      menuMap[menuLabel].count++;
+      menuMap[menuLabel].size += size;
+      menuMap[menuLabel].keys.push(r.key);
+    });
+
+    // Store 정보
+    const storeNames = Array.from(db.objectStoreNames);
+    const tx = db.transaction(storeNames[0], 'readonly');
+    const store = tx.objectStore(storeNames[0]);
+    const indexNames = Array.from(store.indexNames);
+
+    let html = '<table>';
+
+    // DB 정보
+    html += '<tr><th colspan="2" style="color:#f5c2e7">Database</th></tr>';
+    html += `<tr><td>DB Name</td><td>${db.name}</td></tr>`;
+    html += `<tr><td>Version</td><td>${db.version}</td></tr>`;
+    html += `<tr><td>Object Stores</td><td>${storeNames.join(', ')}</td></tr>`;
+
+    // Store 스키마
+    html += '<tr><th colspan="2" style="color:#f5c2e7">Store Schema</th></tr>';
+    html += `<tr><td>Store Name</td><td>${store.name}</td></tr>`;
+    html += `<tr><td>Key Path</td><td>${store.keyPath}</td></tr>`;
+    html += `<tr><td>Auto Increment</td><td>${store.autoIncrement}</td></tr>`;
+    html += `<tr><td>Indexes</td><td>${indexNames.join(', ')}</td></tr>`;
+
+    indexNames.forEach((name) => {
+      const idx = store.index(name);
+      html += `<tr><td style="padding-left:20px">↳ ${name}</td><td>keyPath: ${idx.keyPath}, unique: ${idx.unique}, multiEntry: ${idx.multiEntry}</td></tr>`;
+    });
+
+    // 레코드 구조 (첫 번째 레코드 기반)
+    if (records.length > 0) {
+      html += '<tr><th colspan="2" style="color:#f5c2e7">레코드 구조</th></tr>';
+      const sample = records[0];
+      Object.keys(sample).forEach((field) => {
+        const val = sample[field];
+        const type = Array.isArray(val) ? 'Array' : typeof val;
+        const isData = field === 'data';
+        html += `<tr><td>${field}</td><td style="color:${isData ? '#f9e2af' : '#cdd6f4'}">${type}${isData ? ' (API 응답 본문 — 아래 상세)' : ''}</td></tr>`;
+      });
+    }
+
+    // 메타정보
+    html += '<tr><th colspan="2" style="color:#f5c2e7">메타정보</th></tr>';
+    html += `<tr><td>총 레코드 수</td><td>${records.length}건</td></tr>`;
+    html += `<tr><td>총 데이터 크기</td><td>${formatSize(totalSize)}</td></tr>`;
+    html += `<tr><td>POLICY.TTL</td><td>${CopilotCache.POLICY.TTL / 1000}s</td></tr>`;
+    html += `<tr><td>POLICY.MAX_ENTRIES</td><td>${CopilotCache.POLICY.MAX_ENTRIES}</td></tr>`;
+    html += `<tr><td>POLICY.MAX_SIZE_BYTES</td><td>${formatSize(CopilotCache.POLICY.MAX_SIZE_BYTES)}</td></tr>`;
+    html += `<tr><td>POLICY.DEDUP_INTERVAL</td><td>${CopilotCache.POLICY.DEDUP_INTERVAL}ms</td></tr>`;
+
+    // 메뉴별 분포
+    const menuEntries = Object.entries(menuMap);
+    if (menuEntries.length > 0) {
+      html += '<tr><th colspan="2" style="color:#f5c2e7">메뉴별 분포</th></tr>';
+      menuEntries.forEach(([menu, info]) => {
+        html += `<tr><td>${menu}</td><td>${info.count}건, ${formatSize(info.size)}, keys: [${info.keys.join(', ')}]</td></tr>`;
+      });
+    }
+
+    html += '</table>';
+
+    // ─── 키별 데이터 스키마 (각 API 응답의 필드 구조) ───
+    if (records.length > 0) {
+      html += '<table style="margin-top:16px">';
+      html += '<tr><th colspan="3" style="color:#89b4fa; font-size:14px">저장된 데이터 스키마 (키별 data 필드 구조)</th></tr>';
+
+      records.forEach((r) => {
+        html += `<tr><th colspan="3" style="color:#a6e3a1; background:#1e1e2e">${r.key} <span style="color:#6c7086; font-weight:normal">(${r.method} ${r.status}, ${formatSize(r.size)})</span></th></tr>`;
+        html += '<tr><th style="width:30%">필드</th><th style="width:20%">타입</th><th>값 미리보기</th></tr>';
+
+        extractSchema(r.data).forEach((field) => {
+          html += `<tr>
+            <td style="padding-left:${field.depth * 16}px">${field.depth > 0 ? '↳ ' : ''}${field.name}</td>
+            <td style="color:#cba6f7">${field.type}</td>
+            <td style="color:#6c7086; max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${field.preview}</td>
+          </tr>`;
+        });
+      });
+
+      html += '</table>';
+    }
+
+    container.innerHTML = html;
+    log('스키마 + 메타정보 조회 완료', 'success');
+  } catch (err) {
+    log(`스키마 조회 실패: ${err.message}`, 'error');
+    container.innerHTML = `<p style="color:#f38ba8; margin-top:8px;">조회 실패: ${err.message}</p>`;
+  }
+}
+
+/**
+ * 객체에서 스키마(필드명, 타입, 미리보기)를 재귀적으로 추출
+ * @param {*} obj
+ * @param {number} depth - 들여쓰기 깊이
+ * @param {number} maxDepth - 최대 재귀 깊이
+ * @returns {Array<{name, type, preview, depth}>}
+ */
+function extractSchema(obj, depth = 0, maxDepth = 2) {
+  const fields = [];
+  if (!obj || typeof obj !== 'object') return fields;
+
+  const entries = Array.isArray(obj)
+    ? obj.length > 0 ? Object.entries(obj[0]).map(([k, v]) => [k, v]) : []
+    : Object.entries(obj);
+
+  for (const [key, value] of entries) {
+    const type = getFieldType(value);
+    const preview = getPreview(value);
+    fields.push({ name: key, type, preview, depth });
+
+    // 중첩 객체/배열 재귀 (깊이 제한)
+    if (depth < maxDepth) {
+      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
+        fields.push({ name: `[0..${value.length - 1}]`, type: `Array<Object> (${value.length}건)`, preview: '', depth: depth + 1 });
+        fields.push(...extractSchema(value[0], depth + 2, maxDepth));
+      } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+        fields.push(...extractSchema(value, depth + 1, maxDepth));
+      }
+    }
+  }
+
+  return fields;
+}
+
+function getFieldType(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'Array (empty)';
+    const itemType = typeof value[0];
+    return `Array<${itemType === 'object' ? 'Object' : itemType}> (${value.length})`;
+  }
+  return typeof value;
+}
+
+function getPreview(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return value.length > 50 ? `"${value.substring(0, 50)}..."` : `"${value}"`;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return `[${value.length}건]`;
+  if (typeof value === 'object') return `{${Object.keys(value).join(', ')}}`;
+  return String(value);
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+// ─── IndexedDB 캐시 조회 ───
+
+async function refreshCacheView() {
+  try {
+    const records = await CopilotCache.getAll();
+    const container = document.getElementById('cache-table');
+
+    if (records.length === 0) {
+      container.innerHTML = '<p style="color:#6c7086; margin-top:8px;">저장된 데이터 없음</p>';
+      updateStatus();
+      return;
+    }
+
+    let html = `<table>
+      <tr><th>#</th><th>Key</th><th>Method</th><th>Status</th><th>Menu</th><th>Size</th><th>Time</th><th>Data (preview)</th></tr>`;
+
+    records.forEach((r, i) => {
+      const preview = JSON.stringify(r.data).substring(0, 60) + '...';
+      const time = new Date(r.timestamp).toLocaleTimeString();
+      const size = r.size ? `${(r.size / 1024).toFixed(1)}KB` : '-';
+      html += `<tr>
+        <td>${i + 1}</td>
+        <td>${r.key}</td>
+        <td>${r.method}</td>
+        <td>${r.status}</td>
+        <td>${r.menu}</td>
+        <td>${size}</td>
+        <td>${time}</td>
+        <td style="color:#cba6f7">${preview}</td>
+      </tr>`;
+    });
+
+    html += '</table>';
+    container.innerHTML = html;
+    updateStatus();
+  } catch (err) {
+    log(`캐시 조회 실패: ${err.message}`, 'error');
+  }
+}
+
+async function clearCache() {
+  await CopilotCache.clear();
+  document.getElementById('cache-table').innerHTML = '<p style="color:#6c7086; margin-top:8px;">저장된 데이터 없음</p>';
+  log('캐시 전체 삭제 완료', 'success');
+  updateStatus();
+}
+
+// 초기화
+log('Phase 2 테스트 페이지 로드 완료', 'success');
+log('Mock API 서버가 http://localhost:3456 에서 실행 중이어야 합니다', 'warn');
+updateStatus();
+</script>
+
+</body>
+</html>

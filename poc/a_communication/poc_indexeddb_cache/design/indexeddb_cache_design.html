@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IndexedDB Cache Design - OpsNow Copilot</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --dark: #1F2937;
+            --light: #F9FAFB;
+            --white: #FFFFFF;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            line-height: 1.7;
+            color: var(--dark);
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2d5a87 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: var(--white);
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        header .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.95;
+        }
+
+        header .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 20px;
+            border-radius: 20px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 25px;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.15);
+        }
+
+        .card h2 {
+            color: var(--primary);
+            font-size: 1.4rem;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #E0E7FF;
+        }
+
+        .card h3 {
+            color: var(--dark);
+            font-size: 1.1rem;
+            margin: 25px 0 15px 0;
+        }
+
+        .highlight-box {
+            background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+            border-left: 5px solid var(--primary);
+            padding: 20px;
+            border-radius: 0 15px 15px 0;
+            margin: 20px 0;
+        }
+
+        .highlight-box.success {
+            background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
+            border-left-color: var(--secondary);
+        }
+
+        .highlight-box.warning {
+            background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+            border-left-color: var(--warning);
+        }
+
+        .highlight-box.danger {
+            background: linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%);
+            border-left-color: var(--danger);
+        }
+
+        .highlight-box h4 {
+            color: var(--primary);
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+
+        .highlight-box.success h4 { color: #065F46; }
+        .highlight-box.warning h4 { color: #92400E; }
+        .highlight-box.danger h4 { color: #991B1B; }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .flow-section {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 900px) {
+            .flow-section { grid-template-columns: 1fr; }
+        }
+
+        .flow-card {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .flow-card h4 {
+            color: var(--dark);
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+
+        .flow-card .mermaid {
+            background: var(--white);
+            border-radius: 8px;
+            padding: 15px;
+            overflow-x: auto;
+        }
+
+        .info-card {
+            background: var(--light);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .info-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-3px);
+        }
+
+        .info-card .icon {
+            font-size: 2rem;
+            margin-bottom: 12px;
+        }
+
+        .info-card h4 {
+            color: var(--dark);
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        .info-card p {
+            font-size: 0.85rem;
+            color: #6B7280;
+        }
+
+        .badge-inline {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .badge-green { background: #D1FAE5; color: #065F46; }
+        .badge-blue { background: #DBEAFE; color: #1E40AF; }
+        .badge-yellow { background: #FEF3C7; color: #92400E; }
+        .badge-red { background: #FEE2E2; color: #991B1B; }
+        .badge-purple { background: #EDE9FE; color: #5B21B6; }
+
+        .mermaid-container {
+            background: var(--white);
+            padding: 25px;
+            border-radius: 15px;
+            margin: 20px 0;
+            border: 1px solid #E5E7EB;
+            overflow-x: auto;
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        .tech-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .tech-table th {
+            background: var(--light);
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 2px solid #E5E7EB;
+            font-size: 0.9rem;
+        }
+
+        .tech-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #E5E7EB;
+            font-size: 0.9rem;
+        }
+
+        .tech-table code {
+            background: #E5E7EB;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            margin: 15px 0;
+            padding: 20px;
+            background: var(--light);
+            border-radius: 15px;
+        }
+
+        .flow-step .number {
+            width: 36px;
+            height: 36px;
+            background: var(--primary);
+            color: var(--white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .flow-step .content h4 {
+            color: var(--dark);
+            margin-bottom: 6px;
+            font-size: 1rem;
+        }
+
+        .flow-step .content p {
+            color: #6B7280;
+            font-size: 0.9rem;
+        }
+
+        .code-block {
+            background: #1F2937;
+            color: #E5E7EB;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            background: var(--light);
+            border-radius: 10px;
+            margin: 8px 0;
+        }
+
+        .feature-item .check {
+            width: 24px;
+            height: 24px;
+            background: var(--secondary);
+            color: var(--white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+
+        .arrow-icon {
+            width: 24px;
+            height: 24px;
+            background: var(--primary);
+            color: var(--white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+
+        .arrow-icon.outgoing { background: #3B82F6; }
+        .arrow-icon.incoming { background: #10B981; }
+        .arrow-icon.storage { background: #8B5CF6; }
+
+        footer {
+            text-align: center;
+            color: var(--white);
+            padding: 30px 0;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>IndexedDB Cache Design</h1>
+            <p class="subtitle">OpsNow Copilot - 화면 데이터 캐싱 및 서버 연동 설계</p>
+            <span class="badge">PoC: IndexedDB Cache (Phase 1~4 검증 완료)</span>
+        </header>
+
+        <!-- 개요 -->
+        <div class="card">
+            <h2>설계 개요</h2>
+
+            <div class="grid-4">
+                <div class="info-card">
+                    <div class="icon">🔍</div>
+                    <h4>Network Hook</h4>
+                    <p>Axios Interceptor<br>API 응답 자동 캐싱</p>
+                    <span class="badge-inline badge-blue">Interceptor</span>
+                </div>
+                <div class="info-card">
+                    <div class="icon">💾</div>
+                    <h4>IndexedDB 관리</h4>
+                    <p>TTL, 용량, 중복 방지<br>메뉴별 분리</p>
+                    <span class="badge-inline badge-purple">Cache</span>
+                </div>
+                <div class="info-card">
+                    <div class="icon">🔄</div>
+                    <h4>WebSocket 콜백</h4>
+                    <p>서버 → 클라이언트<br>데이터 요청/코드 실행</p>
+                    <span class="badge-inline badge-green">Callback</span>
+                </div>
+                <div class="info-card">
+                    <div class="icon">🛡️</div>
+                    <h4>에러 격리</h4>
+                    <p>캐시 장애 시에도<br>원본 앱 영향 없음</p>
+                    <span class="badge-inline badge-yellow">100%</span>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h4>기술 스택</h4>
+                <p>
+                    <strong>Network Intercept:</strong> Axios Response Interceptor (공통 axios 통일 전제)<br>
+                    <strong>Storage:</strong> IndexedDB (브라우저 네이티브)<br>
+                    <strong>Communication:</strong> WebSocket (Server ↔ Client 콜백)<br>
+                    <strong>Code Execution:</strong> new Function() sandbox (PoC) → Web Worker (프로덕션)
+                </p>
+            </div>
+        </div>
+
+        <!-- PoC 검증 결과 -->
+        <div class="card">
+            <h2>PoC 검증 결과</h2>
+
+            <table class="tech-table">
+                <thead>
+                    <tr><th>Phase</th><th>검증 항목</th><th>결과</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Phase 1</strong></td>
+                        <td>fetch/XHR 오버라이드 + IndexedDB 저장/조회</td>
+                        <td><span class="badge-inline badge-green">검증 완료</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Phase 2</strong></td>
+                        <td>URL 필터링, 덮어쓰기, TTL, 중복 방지, 메뉴별 관리</td>
+                        <td><span class="badge-inline badge-green">검증 완료</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Phase 3</strong></td>
+                        <td>에러 격리 100%, 성능 영향 &lt; 1ms, Sentry 공존</td>
+                        <td><span class="badge-inline badge-green">검증 완료</span></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Phase 4</strong></td>
+                        <td>WebSocket 콜백 → IndexedDB 조회 End-to-End</td>
+                        <td><span class="badge-inline badge-green">검증 완료</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 전체 아키텍처 -->
+        <div class="card">
+            <h2>전체 아키텍처</h2>
+
+            <div class="mermaid-container">
+                <div class="mermaid">
+flowchart TB
+    subgraph Browser["Browser (Client)"]
+        App["OpsNow App<br>(React + Axios)"]
+        Widget["Copilot Widget"]
+        Hook["Network Hook<br>(Axios Interceptor)"]
+        Handler["WS Handler<br>(콜백 처리)"]
+        DB[("IndexedDB<br>copilot-cache")]
+
+        App -->|"API 요청<br>(Axios)"| Hook
+        Hook -->|"fire-and-forget"| DB
+        Widget -->|"WebSocket"| Handler
+        Handler -->|"get / getAll"| DB
+    end
+
+    subgraph Server["Copilot Server (Python)"]
+        WS["WebSocket<br>Endpoint"]
+        LLM["LLM<br>(ReAct Loop)"]
+        WS --> LLM
+    end
+
+    Handler <-->|"WebSocket<br>콜백 패턴"| WS
+
+    style Browser fill:#f0f9ff,stroke:#3b82f6
+    style Server fill:#f0fdf4,stroke:#10b981
+    style DB fill:#ede9fe,stroke:#8b5cf6
+                </div>
+            </div>
+
+            <h3>모듈 구성</h3>
+            <div class="grid-3">
+                <div class="info-card">
+                    <h4>copilot-network-hook.js</h4>
+                    <p>Axios Interceptor<br>API 응답 감지 → 저장</p>
+                    <span class="badge-inline badge-blue">Network Hook</span>
+                </div>
+                <div class="info-card">
+                    <h4>copilot-cache.js</h4>
+                    <p>IndexedDB CRUD<br>TTL/용량/중복 관리</p>
+                    <span class="badge-inline badge-purple">Cache Manager</span>
+                </div>
+                <div class="info-card">
+                    <h4>copilot-ws-handler.js</h4>
+                    <p>WebSocket 콜백 수신<br>IndexedDB 조회 → 응답</p>
+                    <span class="badge-inline badge-green">WS Handler</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Hook -->
+        <div class="card">
+            <h2>Network Hook — API 응답 캐싱</h2>
+
+            <div class="highlight-box warning">
+                <h4>Axios Interceptor 전환 예정</h4>
+                <p>
+                    현재 PoC는 fetch/XHR Override 방식이나, 공통 axios 통일 후 <strong>Axios Interceptor로 전환</strong> 예정.<br>
+                    전환 시 <strong>이 모듈만 교체</strong>되며, IndexedDB 이후 흐름(Cache Manager, WS Handler, 서버)은 변경 없음.
+                </p>
+                <table class="tech-table" style="margin: 10px 0 0 0; background: rgba(255,255,255,0.5);">
+                    <thead><tr><th>항목</th><th>Override (PoC)</th><th>Interceptor (전환 후)</th></tr></thead>
+                    <tbody>
+                        <tr><td>인터셉트</td><td>fetch/XHR 래핑</td><td><code>axios.interceptors.response.use()</code></td></tr>
+                        <tr><td>로드 순서</td><td>App보다 먼저</td><td>의존성 없음</td></tr>
+                        <tr><td>response 접근</td><td><code>response.clone()</code></td><td><code>response.data</code> 직접</td></tr>
+                        <tr><td>Sentry 충돌</td><td>가능</td><td>없음</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mermaid-container">
+                <div class="mermaid">
+flowchart LR
+    A["Axios 응답<br>(Response Interceptor)"] --> C{"필터링<br>shouldProcess()"}
+    C -->|"비대상"| D["원본 응답<br>그대로 반환"]
+    C -->|"대상"| E["원본 응답 반환<br>+ fire-and-forget 저장"]
+    E --> F[("IndexedDB")]
+
+    style F fill:#ede9fe,stroke:#8b5cf6
+                </div>
+            </div>
+
+            <h3>필터링 규칙</h3>
+            <table class="tech-table">
+                <thead>
+                    <tr><th>기준</th><th>조건</th><th>설명</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>URL 패턴</td><td><code>/api/</code> 포함</td><td>API 경로만 대상</td></tr>
+                    <tr><td>URL 제외</td><td><code>/auth/</code>, <code>/login/</code>, <code>/logout/</code></td><td>인증 관련 제외</td></tr>
+                    <tr><td>HTTP 메서드</td><td>GET, POST</td><td>조회 요청만</td></tr>
+                    <tr><td>응답 상태</td><td>200~299</td><td>성공 응답만</td></tr>
+                    <tr><td>Content-Type</td><td><code>application/json</code></td><td>JSON 응답만</td></tr>
+                    <tr><td>응답 크기</td><td>&lt; 10MB</td><td>대용량 응답 스킵</td></tr>
+                </tbody>
+            </table>
+
+            <h3>에러 격리 (PoC 검증 완료)</h3>
+            <div class="grid-2">
+                <div class="highlight-box success">
+                    <h4>fire-and-forget 패턴</h4>
+                    <p>비동기 저장이 완료되기 전에 원본 응답이 즉시 반환됩니다.<br>오버헤드 <strong>&lt; 1ms</strong></p>
+                </div>
+                <div class="highlight-box success">
+                    <h4>에러 격리 100%</h4>
+                    <p>IndexedDB 장애, quota 초과, JSON 파싱 실패 시에도<br>원본 앱 동작에 <strong>영향 없음</strong></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cache Manager -->
+        <div class="card">
+            <h2>Cache Manager — IndexedDB 관리</h2>
+
+            <h3>데이터베이스 스키마</h3>
+            <div class="code-block">
+Database: copilot-cache<br>
+Store: api-responses<br><br>
+Record {<br>
+&nbsp;&nbsp;key: string &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// URL 기반 키 (예: "GET:/api/cost/summary")<br>
+&nbsp;&nbsp;url: string &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 원본 URL<br>
+&nbsp;&nbsp;method: string &nbsp;&nbsp;&nbsp;// HTTP 메서드<br>
+&nbsp;&nbsp;data: any &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// API 응답 데이터 (JSON)<br>
+&nbsp;&nbsp;size: number &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 데이터 크기 (bytes)<br>
+&nbsp;&nbsp;menu: string &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 페이지 메뉴 (예: "/cost/")<br>
+&nbsp;&nbsp;timestamp: number // 저장 시각 (ms)<br>
+}<br><br>
+Indexes: menu, timestamp
+            </div>
+
+            <h3>관리 정책</h3>
+            <table class="tech-table">
+                <thead>
+                    <tr><th>정책</th><th>값</th><th>설명</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>TTL</td><td><strong>5분</strong></td><td>저장 후 5분 경과 시 자동 만료</td></tr>
+                    <tr><td>MAX_ENTRIES</td><td><strong>100건</strong></td><td>초과 시 오래된 항목부터 삭제</td></tr>
+                    <tr><td>MAX_SIZE</td><td><strong>100MB</strong></td><td>단일 응답 크기 상한</td></tr>
+                    <tr><td>DEDUP_INTERVAL</td><td><strong>1초</strong></td><td>동일 URL 중복 저장 방지</td></tr>
+                    <tr><td>덮어쓰기</td><td>항상</td><td>동일 키 → 최신 데이터로 교체</td></tr>
+                    <tr><td>메뉴 변경 삭제</td><td>즉시</td><td>이전 메뉴 데이터 전체 삭제</td></tr>
+                </tbody>
+            </table>
+
+            <h3>메뉴 변경 감지</h3>
+            <div class="mermaid-container">
+                <div class="mermaid">
+flowchart LR
+    A["History API 래핑<br>(pushState, replaceState)<br>+ popstate"] --> B["메뉴 변경 감지"]
+    B --> C["이전 메뉴 데이터 삭제<br>CopilotCache.deleteByMenu()"]
+    C --> D["새 메뉴 API 응답<br>자동 저장"]
+
+    style C fill:#fee2e2,stroke:#ef4444
+    style D fill:#d1fae5,stroke:#10b981
+                </div>
+            </div>
+        </div>
+
+        <!-- WebSocket 콜백 -->
+        <div class="card">
+            <h2>WebSocket Handler — 서버 콜백 처리</h2>
+
+            <h3>콜백 타입</h3>
+            <div class="grid-2">
+                <div>
+                    <h4 style="color: #10B981; margin-bottom: 10px;">Server → Client</h4>
+                    <div class="feature-item">
+                        <span class="arrow-icon incoming">&larr;</span>
+                        <span><code>request_available_data</code> IndexedDB 키 목록 요청</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="arrow-icon incoming">&larr;</span>
+                        <span><code>request_api</code> 특정 키 데이터 요청</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="arrow-icon incoming">&larr;</span>
+                        <span><code>execute_code</code> LLM 생성 코드 실행 요청</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="arrow-icon incoming">&larr;</span>
+                        <span><code>ping</code> 하트비트</span>
+                    </div>
+                </div>
+                <div>
+                    <h4 style="color: #3B82F6; margin-bottom: 10px;">Client → Server</h4>
+                    <div class="feature-item">
+                        <span class="arrow-icon outgoing">&rarr;</span>
+                        <span><code>available_data</code> 키 목록 응답</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="arrow-icon outgoing">&rarr;</span>
+                        <span><code>api_result</code> 데이터 응답</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="arrow-icon outgoing">&rarr;</span>
+                        <span><code>code_result</code> 코드 실행 결과</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="arrow-icon outgoing">&rarr;</span>
+                        <span><code>pong</code> 하트비트 응답</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 콜백 흐름 시퀀스 -->
+        <div class="card">
+            <h2>콜백 흐름 상세</h2>
+
+            <div class="flow-section">
+                <div class="flow-card">
+                    <h4>request_api 흐름 (소용량)</h4>
+                    <div class="mermaid">
+sequenceDiagram
+    participant S as Server
+    participant C as Client
+
+    S->>C: request_available_data
+    C->>S: available_data {키 목록}
+    Note over S: LLM이 키 선택
+    S->>C: request_api {dataKey}
+    Note over C: IndexedDB 조회
+    C->>S: api_result {data}
+    Note over S: LLM 응답 생성
+    S->>C: response {answer}
+                    </div>
+                </div>
+                <div class="flow-card">
+                    <h4>execute_code 흐름 (대용량)</h4>
+                    <div class="mermaid">
+sequenceDiagram
+    participant S as Server
+    participant C as Client
+
+    S->>C: request_available_data
+    C->>S: available_data {키 목록}
+    Note over S: LLM이 JS 코드 생성<br>(CopilotCache.get 포함)
+    S->>C: execute_code {code}
+    Note over C: 코드 실행<br>→ 필요 데이터 추출
+    C->>S: code_result {result}
+    Note over S: LLM 응답 생성
+    S->>C: response {answer}
+                    </div>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <h4>execute_code 핵심 특성</h4>
+                <p>
+                    <strong>자체 완결형 코드:</strong> 서버(LLM)가 available_data 스키마를 보고 코드 생성 (CopilotCache.get() 호출 포함)<br>
+                    <strong>클라이언트 역할:</strong> 코드만 실행 — 어떤 키를 조회할지 알 필요 없음<br>
+                    <strong>약속된 인터페이스:</strong> <code>CopilotCache.get(key)</code>, <code>CopilotCache.getAll()</code>, <code>CopilotCache.getByMenu(menu)</code>
+                </p>
+            </div>
+        </div>
+
+        <!-- 전체 데이터 흐름 -->
+        <div class="card">
+            <h2>전체 데이터 흐름</h2>
+
+            <div class="mermaid-container">
+                <div class="mermaid">
+sequenceDiagram
+    participant U as 사용자
+    participant App as OpsNow App
+    participant Hook as Network Hook
+    participant DB as IndexedDB
+    participant WS as WS Handler
+    participant S as Copilot Server
+
+    U->>App: /cost/ 페이지 접속
+    App->>Hook: Axios 응답 (Interceptor)
+    Hook-->>DB: fire-and-forget 저장
+    Hook->>App: 원본 응답 반환 (< 1ms)
+
+    U->>WS: "이번달 비용이 얼마야?"
+    WS->>S: query {query, domContext}
+
+    S->>WS: request_available_data
+    WS->>DB: getAll()
+    DB->>WS: [키 목록]
+    WS->>S: available_data
+
+    S->>WS: request_api {dataKey}
+    WS->>DB: get(dataKey)
+    DB->>WS: {data}
+    WS->>S: api_result
+
+    S->>WS: response {answer}
+    WS->>U: 답변 표시
+                </div>
+            </div>
+        </div>
+
+        <!-- execute_code 보안 -->
+        <div class="card">
+            <h2>execute_code 실행 환경</h2>
+
+            <div class="grid-2">
+                <div>
+                    <h3>PoC</h3>
+                    <div class="feature-item">
+                        <span class="arrow-icon storage">F</span>
+                        <span><code>new Function('CopilotCache', code)</code></span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="check">✓</span>
+                        <span>CopilotCache만 접근 가능</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="check">✓</span>
+                        <span>try-catch 에러 격리</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="check">✓</span>
+                        <span>10초 타임아웃</span>
+                    </div>
+                </div>
+                <div>
+                    <h3>프로덕션</h3>
+                    <div class="feature-item">
+                        <span class="arrow-icon storage">W</span>
+                        <span>Web Worker / iframe sandbox</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="check">✓</span>
+                        <span>별도 스레드 실행</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="check">✓</span>
+                        <span>DOM 접근 원천 차단</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="check">✓</span>
+                        <span>메모리/CPU 제한</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="highlight-box danger">
+                <h4>보안 위협 대응</h4>
+                <p>
+                    <strong>악성 코드:</strong> CopilotCache만 접근 가능 (window, document 차단)<br>
+                    <strong>무한 루프:</strong> 타임아웃 10초<br>
+                    <strong>에러 전파:</strong> try-catch → code_result.success=false 반환, 원본 페이지 영향 없음
+                </p>
+            </div>
+        </div>
+
+        <!-- 성능 -->
+        <div class="card">
+            <h2>성능 (PoC 검증 결과)</h2>
+
+            <div class="grid-4">
+                <div class="info-card">
+                    <div class="icon">1KB</div>
+                    <h4>x 100건</h4>
+                    <p>&lt; 1ms 오버헤드</p>
+                    <span class="badge-inline badge-green">Pass</span>
+                </div>
+                <div class="info-card">
+                    <div class="icon">100KB</div>
+                    <h4>x 20건</h4>
+                    <p>&lt; 1ms 오버헤드</p>
+                    <span class="badge-inline badge-green">Pass</span>
+                </div>
+                <div class="info-card">
+                    <div class="icon">5MB</div>
+                    <h4>x 5건</h4>
+                    <p>&lt; 1ms 오버헤드</p>
+                    <span class="badge-inline badge-green">Pass</span>
+                </div>
+                <div class="info-card">
+                    <div class="icon">10건</div>
+                    <h4>동시 요청</h4>
+                    <p>전건 정상 저장</p>
+                    <span class="badge-inline badge-green">Pass</span>
+                </div>
+            </div>
+
+            <h3>메시지 크기 제한</h3>
+            <table class="tech-table">
+                <thead>
+                    <tr><th>메시지</th><th>권장 최대</th><th>비고</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>available_data</code></td><td>10KB</td><td>키 목록</td></tr>
+                    <tr><td><code>api_result</code></td><td>100KB</td><td>초과 시 execute_code 전환</td></tr>
+                    <tr><td><code>code_result</code></td><td>1KB</td><td>추출 결과만</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- One-Time Token -->
+        <div class="card">
+            <h2>보안 — One-Time Token</h2>
+
+            <div class="flow-step">
+                <div class="number">1</div>
+                <div class="content">
+                    <h4>토큰 발급</h4>
+                    <p>서버가 콜백 요청 시 일회용 requestId 생성 (timestamp + random)</p>
+                </div>
+            </div>
+            <div class="flow-step">
+                <div class="number">2</div>
+                <div class="content">
+                    <h4>응답 첨부</h4>
+                    <p>클라이언트가 응답 시 받은 requestId를 그대로 첨부</p>
+                </div>
+            </div>
+            <div class="flow-step">
+                <div class="number">3</div>
+                <div class="content">
+                    <h4>검증 및 폐기</h4>
+                    <p>서버가 Future resolve 후 즉시 폐기 (1회용)</p>
+                </div>
+            </div>
+
+            <table class="tech-table" style="margin-top: 20px;">
+                <thead>
+                    <tr><th>위협</th><th>대응</th><th>효과</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Replay Attack</td>
+                        <td>사용 즉시 폐기</td>
+                        <td><span class="badge-inline badge-green">완전 차단</span></td>
+                    </tr>
+                    <tr>
+                        <td>토큰 예측</td>
+                        <td><code>secrets.token_urlsafe</code></td>
+                        <td><span class="badge-inline badge-green">암호학적 안전</span></td>
+                    </tr>
+                    <tr>
+                        <td>위조 응답 주입</td>
+                        <td>등록된 requestId만 수락</td>
+                        <td><span class="badge-inline badge-green">거부</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 구현 항목 -->
+        <div class="card">
+            <h2>구현 항목 정리</h2>
+
+            <h3>클라이언트 모듈 (PoC → 프로덕션)</h3>
+            <table class="tech-table">
+                <thead>
+                    <tr><th>모듈</th><th>PoC 완료</th><th>프로덕션 추가 작업</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>copilot-cache.js</code></td>
+                        <td>IndexedDB CRUD + 관리 정책</td>
+                        <td>TypeScript 전환, 설정 외부화</td>
+                    </tr>
+                    <tr>
+                        <td><code>copilot-network-hook.js</code></td>
+                        <td>fetch/XHR 오버라이드 + 필터링</td>
+                        <td><strong>Axios Interceptor로 전환</strong> (공통 axios 통일 후)</td>
+                    </tr>
+                    <tr>
+                        <td><code>copilot-ws-handler.js</code></td>
+                        <td>WebSocket 콜백 처리</td>
+                        <td>Web Worker sandbox, 재연결</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>서버 모듈 (신규 구현)</h3>
+            <table class="tech-table">
+                <thead>
+                    <tr><th>모듈</th><th>설명</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>WebSocket 엔드포인트</td><td>FastAPI WebSocket + PendingCallbacks</td></tr>
+                    <tr><td>콜백 요청 함수</td><td><code>request_available_data()</code>, <code>request_api()</code>, <code>execute_code()</code></td></tr>
+                    <tr><td>LLM 코드 생성</td><td>available_data 스키마 기반 JS 코드 생성 프롬프트</td></tr>
+                    <tr><td>Smart Fallback</td><td>IndexedDB 데이터 없을 때 관련 메뉴 안내</td></tr>
+                </tbody>
+            </table>
+
+            <div class="highlight-box warning">
+                <h4>Axios Interceptor 전환 계획</h4>
+                <p>
+                    공통 axios (<code>getAxios()</code>) 통일 후 Network Hook을 Axios Interceptor로 전환 예정.<br>
+                    <strong>교체 대상:</strong> <code>copilot-network-hook.js</code> 1개 모듈만<br>
+                    <strong>변경 없음:</strong> <code>copilot-cache.js</code>, <code>copilot-ws-handler.js</code>, 서버 전체
+                </p>
+            </div>
+        </div>
+
+        <!-- 핵심 정리 -->
+        <div class="card">
+            <h2>핵심 정리</h2>
+
+            <div class="feature-item">
+                <span class="check">1</span>
+                <span><strong>Network Hook</strong> — Axios Interceptor로 API 응답 자동 캐싱 (PoC: fetch/XHR Override → 전환 예정)</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">2</span>
+                <span><strong>IndexedDB 관리</strong> — TTL, 용량, 중복 방지, 메뉴별 분리 정책</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">3</span>
+                <span><strong>WebSocket 콜백</strong> — 서버가 클라이언트 IndexedDB 데이터를 요청/조회/코드 실행</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">4</span>
+                <span><strong>execute_code</strong> — LLM이 생성한 자체 완결형 코드를 클라이언트에서 실행 (대용량 데이터 처리)</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">5</span>
+                <span><strong>에러 격리 100%</strong> — 캐시 장애, 코드 실행 에러 시에도 원본 앱 영향 없음</span>
+            </div>
+            <div class="feature-item">
+                <span class="check">6</span>
+                <span><strong>성능 무영향</strong> — fire-and-forget 패턴, 오버헤드 &lt; 1ms</span>
+            </div>
+        </div>
+
+        <footer>
+            <p>OpsNow Copilot - IndexedDB Cache Design Document</p>
+            <p>PoC: IndexedDB Cache (Phase 1~4)</p>
+        </footer>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            },
+            sequence: {
+                useMaxWidth: true,
+                showSequenceNumbers: false
+            }
+        });
+    </script>
+</body>
+</html>
