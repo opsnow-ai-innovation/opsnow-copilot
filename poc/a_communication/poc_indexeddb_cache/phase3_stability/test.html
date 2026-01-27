@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Phase 3 — 안정성 및 충돌 검증</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Consolas', 'Menlo', monospace; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+    h1 { color: #89b4fa; margin-bottom: 8px; font-size: 20px; }
+    h2 { color: #a6e3a1; margin: 20px 0 10px; font-size: 16px; }
+    .subtitle { color: #6c7086; font-size: 13px; margin-bottom: 20px; }
+    .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 8px; }
+    .tag-warn { background: #f9e2af; color: #1e1e2e; }
+
+    .section { background: #313244; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .section-title { color: #f5c2e7; font-size: 14px; font-weight: bold; margin-bottom: 12px; }
+    .section-desc { color: #6c7086; font-size: 11px; margin-bottom: 10px; line-height: 1.5; }
+    .guide { color: #9399b2; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+
+    button {
+      background: #45475a; color: #cdd6f4; border: 1px solid #585b70;
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; font-family: inherit;
+      font-size: 13px; margin: 4px;
+    }
+    button:hover { background: #585b70; }
+    button.primary { background: #89b4fa; color: #1e1e2e; border-color: #89b4fa; font-weight: bold; }
+    button.danger { background: #f38ba8; color: #1e1e2e; border-color: #f38ba8; }
+    button.success { background: #a6e3a1; color: #1e1e2e; border-color: #a6e3a1; }
+
+    #log {
+      background: #11111b; border: 1px solid #313244; border-radius: 8px;
+      padding: 12px; height: 450px; overflow-y: auto; font-size: 12px;
+      line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+    }
+    .log-info { color: #89b4fa; }
+    .log-success { color: #a6e3a1; }
+    .log-warn { color: #f9e2af; }
+    .log-error { color: #f38ba8; }
+    .log-data { color: #cba6f7; }
+    .log-perf { color: #94e2d5; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+    th { background: #45475a; padding: 6px 8px; text-align: left; color: #89b4fa; }
+    td { padding: 6px 8px; border-bottom: 1px solid #313244; }
+    tr:hover td { background: #45475a; }
+  </style>
+</head>
+<body>
+
+<h1>Phase 3: 안정성 및 충돌 검증</h1>
+<p class="subtitle">에러 격리 · Sentry 충돌 · 성능 벤치마크 | Mock API: http://localhost:3456</p>
+
+<!-- ═══ 3-1. 충돌 테스트 ═══ -->
+<div class="section">
+  <div class="section-title">3-1. 충돌 테스트 <span class="tag tag-warn">⛔ Interceptor 전환 시 불필요</span></div>
+  <div class="section-desc">Sentry 등 모니터링 SDK가 fetch/XHR을 래핑하는 패턴을 시뮬레이션하여, 우리 hook과 공존 가능한지 확인합니다. 순서 무관, 개별 실행 가능.</div>
+  <button class="primary" onclick="testSentryAfterHook()">Sentry 초기화 후 Override</button>
+  <button onclick="testHookAfterSentry()">Override 후 Sentry 초기화</button>
+  <button onclick="testDoubleOverride()">이중 Override 순서 무관</button>
+  <p class="guide">
+    · Sentry 초기화 후: 페이지 로드 시 hook이 먼저 래핑 → 이후 Sentry Mock이 추가 래핑 → 양쪽 모두 동작하는지 확인<br>
+    · Override 후 Sentry: 위와 동일한 구조이지만 fetch만 테스트 (이미 hook 먼저 로드된 상태)<br>
+    · 이중 Override: Sentry Mock을 2번 래핑 → 다중 래핑 체인에서도 정상 동작하는지 확인
+  </p>
+</div>
+
+<!-- ═══ 3-2. 에러 격리 테스트 ═══ -->
+<div class="section">
+  <div class="section-title">3-2. 에러 격리 테스트</div>
+  <div class="section-desc">IndexedDB 장애 상황에서도 원본 API 응답이 정상 반환되는지 확인합니다. 권장 순서: 강제 에러 → 해제 → JSON 파싱 실패 → Quota 초과.</div>
+  <button class="primary" onclick="testDbForceError()">IndexedDB 강제 에러 → fetch</button>
+  <button class="danger" onclick="resetForceError()">강제 에러 해제</button>
+  <button onclick="testMalformedJson()">JSON 파싱 실패 → fetch</button>
+  <button onclick="testQuotaExceed()">Quota 초과 시뮬레이션</button>
+  <p class="guide">
+    · 강제 에러: DB를 고장낸 상태에서 fetch/XHR 요청 → 원본 응답이 정상 반환되면 격리 성공<br>
+    · 강제 에러 해제: DB를 정상 복구. 다음 테스트 전에 반드시 해제해야 저장이 동작함<br>
+    · JSON 파싱 실패: 서버가 깨진 JSON을 반환 → 저장 스킵, 원본 응답 정상 반환 확인<br>
+    · Quota 초과: MAX_ENTRIES를 5로 줄인 후 8건 저장 시도 → 오래된 항목 자동 제거 확인 (~10초 소요, 자동 복원)
+  </p>
+</div>
+
+<!-- ═══ 3-3. 성능 테스트 ═══ -->
+<div class="section">
+  <div class="section-title">3-3. 성능 테스트</div>
+  <div class="section-desc">응답 크기별 오버라이드 오버헤드를 측정합니다. 성공 기준: fire-and-forget이므로 응답 지연 1ms 미만. 개별 실행 후 [성능 결과 보기]로 종합 확인.</div>
+  <button class="primary" onclick="perfSmall()">소형 1KB × 100건</button>
+  <button onclick="perfMedium()">중형 100KB × 20건</button>
+  <button onclick="perfLarge()">대형 5MB × 5건</button>
+  <button onclick="perfConcurrent()">동시 10건 (Promise.all)</button>
+  <button class="success" onclick="showPerfSummary()">성능 결과 보기</button>
+  <button onclick="CopilotNetworkHook.clearPerfLog(); log('✓ 성능 로그 초기화', 'success');">로그 초기화</button>
+  <p class="guide">
+    · 소형 1KB × 100건: 가벼운 응답 대량 처리 (~수초)<br>
+    · 중형 100KB × 20건: 일반적인 API 응답 크기 (~수초)<br>
+    · 대형 5MB × 5건: 대용량 응답의 clone()+JSON 파싱 부하 측정 (~수초~수십초)<br>
+    · 동시 10건: Promise.all로 10건 동시 요청 → 모든 건 저장 + 응답 시간 측정<br>
+    · 성능 결과 보기: 위 테스트들의 intercept/save 오버헤드 avg/min/max 종합 출력<br>
+    · 로그 초기화: 이전 측정 데이터를 지우고 새로 측정할 때 사용
+  </p>
+</div>
+
+<!-- ═══ 캐시 확인 ═══ -->
+<div class="section">
+  <div class="section-title">IndexedDB 캐시 확인</div>
+  <div class="section-desc">위 테스트 실행 후 실제 저장된 데이터를 확인합니다. 테스트 간 간섭을 줄이려면 [전체 삭제] 후 개별 테스트를 실행하세요.</div>
+  <button class="primary" onclick="refreshCacheView()">캐시 조회</button>
+  <button class="danger" onclick="clearCache()">전체 삭제</button>
+  <div id="cache-table"></div>
+</div>
+
+<!-- 로그 -->
+<h2>실행 로그</h2>
+<div id="log"></div>
+<button style="margin-top:8px" onclick="document.getElementById('log').innerHTML=''">로그 지우기</button>
+
+<!-- 스크립트 로드 -->
+<script src="copilot-cache.js"></script>
+<script src="copilot-network-hook.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios@1.7.9/dist/axios.min.js"></script>
+
+<script>
+const API_BASE = '';
+const logEl = document.getElementById('log');
+
+function log(msg, type = 'info') {
+  const ts = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = `log-${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function logData(label, data) {
+  log(`${label}: ${JSON.stringify(data, null, 2)}`, 'data');
+}
+
+// ═══════════════════════════════════════
+// 3-1. 충돌 테스트 (Sentry Mock)
+// ═══════════════════════════════════════
+
+/**
+ * Sentry-like fetch 래핑 시뮬레이션
+ * 실제 Sentry SDK가 fetch를 래핑하는 패턴과 동일
+ */
+function mockSentryWrapFetch() {
+  const prev = window.fetch;
+  window.fetch = function (...args) {
+    console.log('[MockSentry] fetch 가로챔');
+    return prev.apply(this, args);
+  };
+  log('[MockSentry] fetch 래핑 완료', 'warn');
+}
+
+function mockSentryWrapXHR() {
+  const origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    console.log('[MockSentry] XHR.open 가로챔');
+    return origOpen.call(this, method, url, ...rest);
+  };
+  log('[MockSentry] XHR 래핑 완료', 'warn');
+}
+
+async function testSentryAfterHook() {
+  log('▶ 3-1. Sentry 초기화 후 Override (현재: hook 먼저 → Sentry 래핑)', 'info');
+  // 현재 상태: hook이 먼저 로드됨 → Sentry가 후에 래핑
+  mockSentryWrapFetch();
+  mockSentryWrapXHR();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cost/summary`);
+    const data = await res.json();
+    log(`✓ fetch 정상: totalCost=${data.totalCost}`, 'success');
+
+    // XHR도 확인
+    await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${API_BASE}/api/asset/list`);
+      xhr.onload = function () {
+        const d = JSON.parse(xhr.responseText);
+        log(`✓ XHR 정상: ${d.totalCount}건`, 'success');
+        resolve();
+      };
+      xhr.onerror = () => { log('✗ XHR 에러', 'error'); resolve(); };
+      xhr.send();
+    });
+
+    log('✓ Sentry 후 래핑 — 양쪽 모두 정상', 'success');
+  } catch (err) {
+    log(`✗ 에러: ${err.message}`, 'error');
+  }
+}
+
+async function testHookAfterSentry() {
+  log('▶ 3-1. Override 후 Sentry 초기화 (주의: 이미 hook이 먼저 로드됨)', 'info');
+  log('※ 현재 페이지는 hook이 먼저 로드됐으므로, Sentry가 hook의 fetch를 래핑하는 상태', 'warn');
+
+  mockSentryWrapFetch();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cost/summary`);
+    const data = await res.json();
+    log(`✓ fetch 정상: totalCost=${data.totalCost}`, 'success');
+    log('✓ Override 후 Sentry — 정상 동작', 'success');
+  } catch (err) {
+    log(`✗ 에러: ${err.message}`, 'error');
+  }
+}
+
+async function testDoubleOverride() {
+  log('▶ 3-1. 이중 Override — fetch를 2번 래핑', 'info');
+  mockSentryWrapFetch();
+  mockSentryWrapFetch();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cost/summary`);
+    const data = await res.json();
+    log(`✓ 이중 래핑 후 fetch 정상: totalCost=${data.totalCost}`, 'success');
+  } catch (err) {
+    log(`✗ 에러: ${err.message}`, 'error');
+  }
+}
+
+// ═══════════════════════════════════════
+// 3-2. 에러 격리 테스트
+// ═══════════════════════════════════════
+
+async function testDbForceError() {
+  log('▶ 3-2. IndexedDB 강제 에러 ON → fetch 요청', 'info');
+  CopilotCache.setForceError(true);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cost/summary`);
+    const data = await res.json();
+    log(`✓ 원본 응답 정상: totalCost=${data.totalCost}`, 'success');
+    log('✓ IndexedDB 에러 상태에서도 원본 응답에 영향 없음 — 에러 격리 성공', 'success');
+  } catch (err) {
+    log(`✗ 원본 응답 에러 (격리 실패!): ${err.message}`, 'error');
+  }
+
+  // XHR도 확인
+  await new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `${API_BASE}/api/asset/list`);
+    xhr.onload = function () {
+      const d = JSON.parse(xhr.responseText);
+      log(`✓ XHR 원본 응답 정상: ${d.totalCount}건 — 에러 격리 성공`, 'success');
+      resolve();
+    };
+    xhr.onerror = () => {
+      log('✗ XHR 원본 응답 에러 (격리 실패!)', 'error');
+      resolve();
+    };
+    xhr.send();
+  });
+}
+
+function resetForceError() {
+  CopilotCache.setForceError(false);
+  log('✓ 강제 에러 모드 해제', 'success');
+}
+
+async function testMalformedJson() {
+  log('▶ 3-2. JSON 파싱 실패 테스트 (/api/malformed-json)', 'info');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/malformed-json`);
+    const text = await res.text();
+    log(`✓ 원본 응답 수신 (text): "${text.substring(0, 50)}"`, 'success');
+    log('✓ JSON 파싱 실패 — 저장 스킵, 원본 응답 정상 반환', 'success');
+  } catch (err) {
+    log(`✗ 에러: ${err.message}`, 'error');
+  }
+}
+
+async function testQuotaExceed() {
+  log('▶ 3-2. Quota 초과 시뮬레이션 (MAX_ENTRIES=100 초과 시도)', 'info');
+
+  // 임시로 MAX_ENTRIES를 5로 줄여서 빠르게 테스트
+  const origMax = CopilotCache.POLICY.MAX_ENTRIES;
+  CopilotCache.POLICY.MAX_ENTRIES = 5;
+  log(`MAX_ENTRIES를 임시로 5로 변경 (원래: ${origMax})`, 'warn');
+
+  // 중복 방지 해제를 위해 각각 다른 URL
+  for (let i = 0; i < 8; i++) {
+    try {
+      const res = await fetch(`${API_BASE}/api/cost/summary?seq=${i}&t=${Date.now()}`);
+      const data = await res.json();
+      log(`  요청 ${i + 1}/8: 응답 정상 (totalCost=${data.totalCost})`, 'info');
+    } catch (err) {
+      log(`  요청 ${i + 1}/8: 에러 ${err.message}`, 'error');
+    }
+    // 중복 방지 간격 대기
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+
+  const cnt = await CopilotCache.count();
+  log(`현재 캐시 건수: ${cnt} (MAX_ENTRIES=5)`, cnt <= 5 ? 'success' : 'error');
+
+  if (cnt <= 5) {
+    log('✓ Quota 초과 시 오래된 항목 자동 제거 — 정상', 'success');
+  } else {
+    log('✗ Quota 관리 실패', 'error');
+  }
+
+  CopilotCache.POLICY.MAX_ENTRIES = origMax;
+  log(`MAX_ENTRIES 복원: ${origMax}`, 'warn');
+}
+
+// ═══════════════════════════════════════
+// 3-3. 성능 테스트
+// ═══════════════════════════════════════
+
+async function perfSmall() {
+  log('▶ 3-3. 소형 응답 1KB × 100건', 'info');
+  CopilotNetworkHook.clearPerfLog();
+  const t0 = performance.now();
+
+  for (let i = 0; i < 100; i++) {
+    try {
+      await fetch(`${API_BASE}/api/size/1kb?i=${i}&t=${Date.now()}`);
+    } catch { /* 무시 */ }
+  }
+
+  const elapsed = performance.now() - t0;
+  log(`✓ 100건 완료: 총 ${elapsed.toFixed(0)}ms, 평균 ${(elapsed / 100).toFixed(1)}ms/건`, 'perf');
+  summarizePerfLog('1KB × 100');
+}
+
+async function perfMedium() {
+  log('▶ 3-3. 중형 응답 100KB × 20건', 'info');
+  CopilotNetworkHook.clearPerfLog();
+  const t0 = performance.now();
+
+  for (let i = 0; i < 20; i++) {
+    try {
+      await fetch(`${API_BASE}/api/size/100kb?i=${i}&t=${Date.now()}`);
+    } catch { /* 무시 */ }
+  }
+
+  const elapsed = performance.now() - t0;
+  log(`✓ 20건 완료: 총 ${elapsed.toFixed(0)}ms, 평균 ${(elapsed / 20).toFixed(1)}ms/건`, 'perf');
+  summarizePerfLog('100KB × 20');
+}
+
+async function perfLarge() {
+  log('▶ 3-3. 대형 응답 5MB × 5건', 'info');
+  CopilotNetworkHook.clearPerfLog();
+  const t0 = performance.now();
+
+  for (let i = 0; i < 5; i++) {
+    try {
+      await fetch(`${API_BASE}/api/size/5mb?i=${i}&t=${Date.now()}`);
+    } catch { /* 무시 */ }
+  }
+
+  const elapsed = performance.now() - t0;
+  log(`✓ 5건 완료: 총 ${elapsed.toFixed(0)}ms, 평균 ${(elapsed / 5).toFixed(1)}ms/건`, 'perf');
+  summarizePerfLog('5MB × 5');
+}
+
+async function perfConcurrent() {
+  log('▶ 3-3. 동시 요청 10건 (Promise.all)', 'info');
+  CopilotNetworkHook.clearPerfLog();
+  const t0 = performance.now();
+
+  const promises = [];
+  for (let i = 0; i < 10; i++) {
+    promises.push(
+      fetch(`${API_BASE}/api/size/1kb?concurrent=${i}&t=${Date.now()}`)
+        .then((r) => r.json())
+        .catch(() => null)
+    );
+  }
+
+  const results = await Promise.all(promises);
+  const elapsed = performance.now() - t0;
+  const success = results.filter(Boolean).length;
+
+  log(`✓ 10건 동시 완료: ${success}/10 성공, 총 ${elapsed.toFixed(0)}ms`, 'perf');
+  summarizePerfLog('동시 10건');
+}
+
+function summarizePerfLog(label) {
+  const logs = CopilotNetworkHook.getPerfLog();
+  if (logs.length === 0) {
+    log(`  [${label}] 성능 로그 없음`, 'warn');
+    return;
+  }
+
+  const saveLogs = logs.filter((l) => l.type === 'save');
+  const interceptLogs = logs.filter((l) => l.type.includes('intercept'));
+
+  if (interceptLogs.length > 0) {
+    const avg = interceptLogs.reduce((s, l) => s + l.overheadMs, 0) / interceptLogs.length;
+    const max = Math.max(...interceptLogs.map((l) => l.overheadMs));
+    log(`  [${label}] intercept: ${interceptLogs.length}건, avg=${avg.toFixed(2)}ms, max=${max.toFixed(2)}ms`, 'perf');
+  }
+
+  if (saveLogs.length > 0) {
+    const avg = saveLogs.reduce((s, l) => s + l.overheadMs, 0) / saveLogs.length;
+    const max = Math.max(...saveLogs.map((l) => l.overheadMs));
+    log(`  [${label}] save: ${saveLogs.length}건, avg=${avg.toFixed(2)}ms, max=${max.toFixed(2)}ms`, 'perf');
+  }
+}
+
+function showPerfSummary() {
+  log('═══ 성능 측정 결과 ═══', 'perf');
+  const logs = CopilotNetworkHook.getPerfLog();
+
+  if (logs.length === 0) {
+    log('기록된 성능 데이터가 없습니다. 테스트를 먼저 실행하세요.', 'warn');
+    return;
+  }
+
+  const byType = {};
+  logs.forEach((l) => {
+    if (!byType[l.type]) byType[l.type] = [];
+    byType[l.type].push(l.overheadMs);
+  });
+
+  Object.entries(byType).forEach(([type, times]) => {
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const max = Math.max(...times);
+    const min = Math.min(...times);
+    log(`  ${type}: ${times.length}건 | avg=${avg.toFixed(2)}ms | min=${min.toFixed(2)}ms | max=${max.toFixed(2)}ms`, 'perf');
+  });
+
+  log(`총 ${logs.length}건 기록`, 'perf');
+}
+
+// ═══════════════════════════════════════
+// 캐시 조회/삭제
+// ═══════════════════════════════════════
+
+async function refreshCacheView() {
+  log('▶ IndexedDB 캐시 조회', 'info');
+  try {
+    const records = await CopilotCache.getAll();
+    const container = document.getElementById('cache-table');
+
+    if (records.length === 0) {
+      container.innerHTML = '<p style="color:#6c7086; margin-top:8px;">저장된 데이터 없음</p>';
+      log('캐시: 0건', 'warn');
+      return;
+    }
+
+    let html = `<table>
+      <tr><th>#</th><th>Key</th><th>Method</th><th>Size</th><th>Menu</th><th>Time</th></tr>`;
+
+    records.forEach((r, i) => {
+      const time = new Date(r.timestamp).toLocaleTimeString();
+      const size = r.size ? `${(r.size / 1024).toFixed(1)}KB` : '-';
+      html += `<tr>
+        <td>${i + 1}</td>
+        <td>${r.key}</td>
+        <td>${r.method}</td>
+        <td>${size}</td>
+        <td>${r.menu}</td>
+        <td>${time}</td>
+      </tr>`;
+    });
+
+    html += '</table>';
+    container.innerHTML = html;
+    log(`✓ 캐시: ${records.length}건`, 'success');
+  } catch (err) {
+    log(`✗ 캐시 조회 실패: ${err.message}`, 'error');
+  }
+}
+
+async function clearCache() {
+  try {
+    await CopilotCache.clear();
+    document.getElementById('cache-table').innerHTML =
+      '<p style="color:#6c7086; margin-top:8px;">저장된 데이터 없음</p>';
+    log('✓ 캐시 전체 삭제 완료', 'success');
+  } catch (err) {
+    log(`✗ 캐시 삭제 실패: ${err.message}`, 'error');
+  }
+}
+
+// 초기 로그
+log('Phase 3 테스트 페이지 로드 완료', 'success');
+log('Mock API 서버가 http://localhost:3456 에서 실행 중이어야 합니다', 'warn');
+</script>
+
+</body>
+</html>

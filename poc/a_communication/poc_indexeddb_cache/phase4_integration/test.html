@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Phase 4 — WebSocket 콜백 연동 테스트</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Consolas', 'Menlo', monospace; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+    h1 { color: #89b4fa; margin-bottom: 8px; font-size: 20px; }
+    h2 { color: #a6e3a1; margin: 20px 0 10px; font-size: 16px; }
+    .subtitle { color: #6c7086; font-size: 13px; margin-bottom: 20px; }
+
+    .section { background: #313244; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .section-title { color: #f5c2e7; font-size: 14px; font-weight: bold; margin-bottom: 12px; }
+    .section-desc { color: #6c7086; font-size: 11px; margin-bottom: 10px; line-height: 1.5; }
+    .guide { color: #9399b2; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+
+    button {
+      background: #45475a; color: #cdd6f4; border: 1px solid #585b70;
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; font-family: inherit;
+      font-size: 13px; margin: 4px;
+    }
+    button:hover { background: #585b70; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.primary { background: #89b4fa; color: #1e1e2e; border-color: #89b4fa; font-weight: bold; }
+    button.success { background: #a6e3a1; color: #1e1e2e; border-color: #a6e3a1; font-weight: bold; }
+    button.danger { background: #f38ba8; color: #1e1e2e; border-color: #f38ba8; }
+    button.warn { background: #f9e2af; color: #1e1e2e; border-color: #f9e2af; }
+
+    .status {
+      display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px;
+      margin-left: 10px; font-weight: bold;
+    }
+    .status.connected { background: #a6e3a1; color: #1e1e2e; }
+    .status.disconnected { background: #f38ba8; color: #1e1e2e; }
+
+    #log {
+      background: #11111b; border: 1px solid #313244; border-radius: 8px;
+      padding: 12px; height: 500px; overflow-y: auto; font-size: 12px;
+      line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+    }
+    .log-info { color: #89b4fa; }
+    .log-success { color: #a6e3a1; }
+    .log-warn { color: #f9e2af; }
+    .log-error { color: #f38ba8; }
+    .log-data { color: #cba6f7; }
+    .log-ws-in { color: #94e2d5; }
+    .log-ws-out { color: #fab387; }
+    .log-flow { color: #f5c2e7; font-weight: bold; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+    th { background: #45475a; padding: 6px 8px; text-align: left; color: #89b4fa; }
+    td { padding: 6px 8px; border-bottom: 1px solid #313244; }
+    tr:hover td { background: #45475a; }
+
+    #cache-table { margin-top: 12px; }
+    #response-box {
+      background: #11111b; border: 1px solid #313244; border-radius: 8px;
+      padding: 12px; margin-top: 8px; font-size: 12px; line-height: 1.6;
+      white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Phase 4: WebSocket 콜백 연동 테스트</h1>
+<p class="subtitle">
+  Network Override → IndexedDB 저장 → WebSocket 콜백 → IndexedDB 조회 → 서버 응답 (End-to-End) |
+  API: http://localhost:3456 | WS: ws://localhost:8765
+</p>
+
+<!-- ─── 4-0. 연결 및 데이터 준비 ─── -->
+<div class="section">
+  <div class="section-title">4-0. WebSocket 연결 + API 데이터 준비</div>
+  <div class="section-desc">
+    WebSocket 서버에 연결하고, API 호출로 IndexedDB에 데이터를 저장합니다.
+    아래 시나리오 테스트 전 반드시 이 단계를 먼저 수행하세요.
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <strong style="color: #89b4fa;">WebSocket:</strong>
+    <button class="primary" onclick="connectWS()">연결</button>
+    <button class="danger" onclick="disconnectWS()">연결 끊기</button>
+    <span id="ws-status" class="status disconnected">Disconnected</span>
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <strong style="color: #89b4fa;">API 호출 (IndexedDB 저장):</strong>
+    <button onclick="callAPI('/api/cost/summary')">GET /api/cost/summary</button>
+    <button onclick="callAPI('/api/cost/detail', 'POST')">POST /api/cost/detail</button>
+    <button onclick="callAPI('/api/asset/list')">GET /api/asset/list</button>
+    <button onclick="callAPI('/api/billing/overview')">GET /api/billing/overview</button>
+  </div>
+
+  <div>
+    <strong style="color: #89b4fa;">IndexedDB:</strong>
+    <button onclick="refreshCacheView()">캐시 조회</button>
+    <button class="danger" onclick="clearCache()">전체 삭제</button>
+  </div>
+  <div id="cache-table"></div>
+
+  <p class="guide">
+    <b>테스트 순서:</b><br>
+    1. [연결] 클릭 → WebSocket 상태 "Connected" 확인<br>
+    2. API 호출 버튼 클릭 → 로그에서 IndexedDB 저장 확인<br>
+    3. [캐시 조회]로 저장 데이터 확인<br>
+    4. 아래 시나리오 테스트 수행
+  </p>
+</div>
+
+<!-- ─── 4-1. 시나리오 1: 정상 흐름 ─── -->
+<div class="section">
+  <div class="section-title">4-1. 시나리오 1: 정상 흐름 (request_available_data → request_api)</div>
+  <div class="section-desc">
+    서버가 request_available_data로 IndexedDB 키 목록을 요청하고,
+    request_api로 특정 키의 데이터를 조회하여 응답을 생성하는 전체 흐름을 검증합니다.
+  </div>
+  <button class="success" onclick="runScenario1()">질문: "이번달 비용이 얼마야?"</button>
+  <p class="guide">
+    <b>예상 흐름:</b><br>
+    Client → Server: query("이번달 비용이 얼마야?")<br>
+    Server → Client: request_available_data<br>
+    Client → Server: available_data (IndexedDB 키 목록)<br>
+    Server → Client: request_api (dataKey: "/api/cost/summary")<br>
+    Client → Server: api_result (IndexedDB 데이터)<br>
+    Server → Client: response (최종 응답)
+  </p>
+</div>
+
+<!-- ─── 4-2. 시나리오 2: 캐시 없음 ─── -->
+<div class="section">
+  <div class="section-title">4-2. 시나리오 2: 캐시 없음 → Smart Fallback</div>
+  <div class="section-desc">
+    IndexedDB가 비어 있을 때 서버가 Fallback 응답을 생성하는지 확인합니다.
+    먼저 위에서 [전체 삭제]를 실행한 후 이 테스트를 수행하세요.
+  </div>
+  <button class="danger" onclick="clearCache()">1단계: 캐시 전체 삭제</button>
+  <button class="success" onclick="runScenario2()">2단계: 질문 "비용 데이터 보여줘"</button>
+  <p class="guide">
+    <b>예상 흐름:</b><br>
+    Client → Server: query("비용 데이터 보여줘")<br>
+    Server → Client: request_available_data<br>
+    Client → Server: available_data (빈 목록 [])<br>
+    Server → Client: response (Fallback: "데이터 없음, 메뉴 이동 안내")
+  </p>
+</div>
+
+<!-- ─── 4-3. 시나리오 3: execute_code ─── -->
+<div class="section">
+  <div class="section-title">4-3. 시나리오 3: execute_code — 서버가 코드 실행 요청</div>
+  <div class="section-desc">
+    서버(LLM)가 JavaScript 코드를 생성하여 클라이언트에서 실행하고,
+    IndexedDB 데이터에서 필요한 정보만 추출하는 흐름을 검증합니다.
+    반드시 /api/cost/summary 데이터가 IndexedDB에 저장된 상태에서 실행하세요.
+  </div>
+  <button class="success" onclick="runScenario3()">질문: "비용 상위 3개 서비스"</button>
+  <p class="guide">
+    <b>예상 흐름:</b><br>
+    Client → Server: query("비용 상위 3개 서비스", mode: execute_code)<br>
+    Server → Client: request_available_data<br>
+    Client → Server: available_data<br>
+    Server → Client: execute_code (코드: breakdown.sort().slice(0,3))<br>
+    Client: 코드 실행 → IndexedDB 데이터에서 상위 3개 추출<br>
+    Client → Server: code_result (추출 결과)<br>
+    Server → Client: response
+  </p>
+</div>
+
+<!-- ─── 4-4. 시나리오 4: execute_code 에러 격리 ─── -->
+<div class="section">
+  <div class="section-title">4-4. 시나리오 4: execute_code 에러 격리</div>
+  <div class="section-desc">
+    서버가 잘못된 JavaScript 코드를 보냈을 때 에러가 격리되어
+    원본 페이지에 영향을 주지 않는지 확인합니다.
+  </div>
+  <button class="warn" onclick="runScenario4()">에러 코드 실행 테스트</button>
+  <p class="guide">
+    <b>예상 흐름:</b><br>
+    Client → Server: query(mode: execute_code_error)<br>
+    Server → Client: execute_code (코드: "undefinedFunction()")<br>
+    Client: 코드 실행 → ReferenceError 발생 → try-catch로 포착<br>
+    Client → Server: code_result (success: false, error: {...})<br>
+    Server → Client: response ("에러 격리 확인 완료")<br>
+    <b>핵심 확인: 이 버튼 실행 후 페이지가 정상 동작하는지 확인 (다른 버튼 클릭 등)</b>
+  </p>
+</div>
+
+<!-- ─── 4-5. 시나리오 5: 메뉴 이동 후 데이터 갱신 ─── -->
+<div class="section">
+  <div class="section-title">4-5. 시나리오 5: 메뉴 이동 후 데이터 갱신</div>
+  <div class="section-desc">
+    메뉴를 이동하면 이전 메뉴 데이터가 삭제되고,
+    새 메뉴 데이터만 남아 WebSocket 콜백에 해당 데이터만 반환되는지 확인합니다.
+    자동으로 단계별로 실행됩니다.
+  </div>
+  <button class="success" onclick="runScenario5()">시나리오 5 자동 실행</button>
+  <p class="guide">
+    <b>자동 실행 단계:</b><br>
+    Step 1: 캐시 초기화 → /cost/ 메뉴로 이동 → cost API 호출<br>
+    Step 2: /asset/ 메뉴로 이동 → /cost/ 데이터 자동 삭제<br>
+    Step 3: asset API 호출 → IndexedDB에 /asset/ 데이터만 존재<br>
+    Step 4: 질문 전송 → available_data에 /asset/ 데이터만 포함 확인
+  </p>
+</div>
+
+<!-- ─── 서버 응답 ─── -->
+<h2>서버 응답</h2>
+<div id="response-box"></div>
+
+<!-- ─── 실행 로그 ─── -->
+<h2>실행 로그</h2>
+<div id="log"></div>
+<button style="margin-top:8px" onclick="document.getElementById('log').innerHTML=''">로그 지우기</button>
+
+<!-- 스크립트 로드 -->
+<script src="copilot-cache.js"></script>
+<script src="copilot-network-hook.js"></script>
+<script src="copilot-ws-handler.js"></script>
+
+<script>
+const WS_URL = 'ws://localhost:8765';
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('ws-status');
+const responseBox = document.getElementById('response-box');
+
+// ─── 로깅 ───
+
+function log(msg, type = 'info') {
+  const ts = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = `log-${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function logFlow(msg) { log(msg, 'flow'); }
+function logWsIn(msg) { log(`← ${msg}`, 'ws-in'); }
+function logWsOut(msg) { log(`→ ${msg}`, 'ws-out'); }
+
+// ─── WebSocket 이벤트 등록 ───
+
+CopilotWSHandler.on('open', () => {
+  statusEl.textContent = 'Connected';
+  statusEl.className = 'status connected';
+  log('WebSocket 연결 성공', 'success');
+});
+
+CopilotWSHandler.on('close', (e) => {
+  statusEl.textContent = 'Disconnected';
+  statusEl.className = 'status disconnected';
+  log(`WebSocket 연결 종료 (code: ${e.code})`, 'warn');
+});
+
+CopilotWSHandler.on('error', () => {
+  log('WebSocket 연결 에러', 'error');
+});
+
+CopilotWSHandler.on('server_connected', (msg) => {
+  log(`서버 연결 확인: ${msg.serverTime}`, 'success');
+});
+
+CopilotWSHandler.on('message', (msg) => {
+  if (msg.type === 'connected') return; // already logged above
+  const detail = msg.requestId ? ` (requestId: ...${msg.requestId.slice(-8)})` : '';
+  logWsIn(`${msg.type}${detail}`);
+});
+
+CopilotWSHandler.on('callback_sent', (info) => {
+  logWsOut(`${info.callbackType} (requestId: ...${info.requestId.slice(-8)})` +
+    (info.count !== undefined ? ` — ${info.count}건` : '') +
+    (info.key ? ` — key: ${info.key}` : '') +
+    (info.size ? ` — ${info.size} bytes` : '')
+  );
+});
+
+CopilotWSHandler.on('response', (msg) => {
+  log('서버 최종 응답 수신', 'success');
+  showResponse(msg.answer, msg.sources);
+});
+
+CopilotWSHandler.on('server_error', (msg) => {
+  log(`서버 에러: [${msg.code}] ${msg.message}`, 'error');
+});
+
+// ─── 서버 응답 표시 ───
+
+function showResponse(answer, sources) {
+  responseBox.style.display = 'block';
+  responseBox.textContent = answer;
+  if (sources && sources.length > 0) {
+    responseBox.textContent += '\n\nSources: ' + sources.join(', ');
+  }
+}
+
+// ─── WebSocket 연결 ───
+
+function connectWS() {
+  log('WebSocket 연결 시도: ' + WS_URL, 'info');
+  CopilotWSHandler.connect(WS_URL);
+}
+
+function disconnectWS() {
+  CopilotWSHandler.disconnect();
+}
+
+// ─── API 호출 ───
+
+async function callAPI(url, method = 'GET') {
+  log(`▶ ${method} ${url}`, 'info');
+  try {
+    const opts = method === 'POST'
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ period: '2025-01' }) }
+      : {};
+    const res = await fetch(url, opts);
+    const data = await res.json();
+    log(`✓ ${method} ${url} → status: ${res.status}`, 'success');
+  } catch (err) {
+    log(`✗ API 에러: ${err.message}`, 'error');
+  }
+}
+
+// ─── IndexedDB 캐시 ───
+
+async function refreshCacheView() {
+  try {
+    const records = await CopilotCache.getAll();
+    const container = document.getElementById('cache-table');
+
+    if (records.length === 0) {
+      container.innerHTML = '<p style="color:#6c7086; margin-top:8px;">저장된 데이터 없음</p>';
+      log(`캐시: 0건`, 'warn');
+      return;
+    }
+
+    let html = `<table>
+      <tr><th>#</th><th>Key</th><th>Method</th><th>Menu</th><th>Size</th><th>Time</th><th>Data (preview)</th></tr>`;
+
+    records.forEach((r, i) => {
+      const preview = JSON.stringify(r.data).substring(0, 60) + '...';
+      const time = new Date(r.timestamp).toLocaleTimeString();
+      const size = r.size ? `${(r.size / 1024).toFixed(1)}KB` : '-';
+      html += `<tr>
+        <td>${i + 1}</td>
+        <td>${r.key}</td>
+        <td>${r.method}</td>
+        <td>${r.menu}</td>
+        <td>${size}</td>
+        <td>${time}</td>
+        <td style="color:#cba6f7">${preview}</td>
+      </tr>`;
+    });
+
+    html += '</table>';
+    container.innerHTML = html;
+    log(`✓ 캐시: ${records.length}건 조회`, 'success');
+  } catch (err) {
+    log(`✗ 캐시 조회 실패: ${err.message}`, 'error');
+  }
+}
+
+async function clearCache() {
+  try {
+    await CopilotCache.clear();
+    document.getElementById('cache-table').innerHTML =
+      '<p style="color:#6c7086; margin-top:8px;">저장된 데이터 없음</p>';
+    log('✓ 캐시 전체 삭제 완료', 'success');
+  } catch (err) {
+    log(`✗ 캐시 삭제 실패: ${err.message}`, 'error');
+  }
+}
+
+// ─── 시나리오 테스트 ───
+
+function checkWS() {
+  if (!CopilotWSHandler.isConnected()) {
+    log('✗ WebSocket이 연결되지 않았습니다. 먼저 [연결] 버튼을 클릭하세요.', 'error');
+    return false;
+  }
+  return true;
+}
+
+// 시나리오 1: 정상 흐름
+function runScenario1() {
+  if (!checkWS()) return;
+  logFlow('═══ 시나리오 1: 정상 흐름 시작 ═══');
+  responseBox.style.display = 'none';
+  CopilotWSHandler.sendQuery('이번달 비용이 얼마야?');
+  logWsOut('query("이번달 비용이 얼마야?", mode: normal)');
+}
+
+// 시나리오 2: 캐시 없음
+function runScenario2() {
+  if (!checkWS()) return;
+  logFlow('═══ 시나리오 2: 캐시 없음 시작 ═══');
+  responseBox.style.display = 'none';
+  CopilotWSHandler.sendQuery('비용 데이터 보여줘');
+  logWsOut('query("비용 데이터 보여줘", mode: normal)');
+}
+
+// 시나리오 3: execute_code
+function runScenario3() {
+  if (!checkWS()) return;
+  logFlow('═══ 시나리오 3: execute_code 시작 ═══');
+  responseBox.style.display = 'none';
+  CopilotWSHandler.sendQuery('비용 상위 3개 서비스', { mode: 'execute_code' });
+  logWsOut('query("비용 상위 3개 서비스", mode: execute_code)');
+}
+
+// 시나리오 4: execute_code 에러 격리
+function runScenario4() {
+  if (!checkWS()) return;
+  logFlow('═══ 시나리오 4: execute_code 에러 격리 시작 ═══');
+  responseBox.style.display = 'none';
+  CopilotWSHandler.sendQuery('에러 테스트', { mode: 'execute_code_error' });
+  logWsOut('query("에러 테스트", mode: execute_code_error)');
+}
+
+// 시나리오 5: 메뉴 이동 후 데이터 갱신
+async function runScenario5() {
+  if (!checkWS()) return;
+  logFlow('═══ 시나리오 5: 메뉴 이동 후 데이터 갱신 시작 ═══');
+  responseBox.style.display = 'none';
+
+  // Step 1: 캐시 초기화 + /cost/ 메뉴 이동
+  log('Step 1: 캐시 초기화 + /cost/ 메뉴 이동', 'info');
+  await CopilotCache.clear();
+  log('  캐시 전체 삭제 완료', 'success');
+
+  CopilotNetworkHook.simulateMenuChange('/cost/');
+  log('  메뉴 이동: → /cost/', 'info');
+  await new Promise(r => setTimeout(r, 300));
+
+  // Step 2: /cost/ API 호출
+  log('Step 2: /cost/ API 호출', 'info');
+  await fetch('/api/cost/summary');
+  await fetch('/api/cost/detail', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ period: '2025-01' }),
+  });
+  await new Promise(r => setTimeout(r, 500));
+
+  let records = await CopilotCache.getAll();
+  log(`  /cost/ 데이터 저장 완료: ${records.length}건`, 'success');
+
+  // Step 3: /asset/ 메뉴 이동 → /cost/ 데이터 삭제
+  log('Step 3: /asset/ 메뉴 이동 (이전 /cost/ 데이터 삭제)', 'info');
+  CopilotNetworkHook.simulateMenuChange('/asset/');
+  await new Promise(r => setTimeout(r, 500));
+
+  records = await CopilotCache.getAll();
+  log(`  메뉴 이동 후 캐시: ${records.length}건 (이전 데이터 삭제됨)`, 'warn');
+
+  // Step 4: /asset/ API 호출
+  log('Step 4: /asset/ API 호출', 'info');
+  await fetch('/api/asset/list');
+  await new Promise(r => setTimeout(r, 500));
+
+  records = await CopilotCache.getAll();
+  log(`  /asset/ 데이터 저장 완료: ${records.length}건`, 'success');
+  records.forEach(r => log(`    - key: ${r.key}, menu: ${r.menu}`, 'data'));
+
+  // Step 5: 질문 전송
+  log('Step 5: 질문 전송 (현재 메뉴 /asset/ 데이터만 반환 확인)', 'info');
+  CopilotWSHandler.sendQuery('현재 메뉴의 데이터를 보여줘');
+  logWsOut('query("현재 메뉴의 데이터를 보여줘", mode: normal)');
+
+  // 캐시 뷰 갱신
+  await refreshCacheView();
+}
+
+// ─── 초기화 ───
+
+log('Phase 4 테스트 페이지 로드 완료', 'success');
+log('Mock API 서버: http://localhost:3456', 'warn');
+log('WebSocket 서버: ws://localhost:8765', 'warn');
+log('두 서버 모두 실행 중이어야 합니다', 'warn');
+</script>
+
+</body>
+</html>
